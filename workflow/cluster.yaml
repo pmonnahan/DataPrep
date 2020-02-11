@@ -9,32 +9,9 @@ __default__:
   o: 'OandE/{rule}.{wildcards}.out'
   e: 'OandE/{rule}.{wildcards}.err'
 
-QCcombine_query:
+update_alleles_IDs:
   queue: mangi
-  l: 'walltime=04:00:00,pmem=2500mb'
+  l: 'walltime=04:00:00,mem=32gb'
 
-prep_RefVCF:
-  queue: mangi
-  l: 'walltime=24:00:00,mem=32gb'
-
-phase:
-  queue: mangi
-  l: 'walltime=24:00:00,mem=32gb'
-
-infer_ancestry:
-  queue: mangi
-  l: 'walltime=48:00:00,mem=32gb'
-
-make_hap_beds:
-  queue: mangi
-  l: 'walltime=00:30:00,mem=3gb'
-
-plot_karyograms:
-  queue: mangi
-  l: 'walltime=00:30:00,mem=3gb'
-
-admixMap:
-  queue: mangi
-  l: 'walltime=06:00:00,mem=32gb'
 
 

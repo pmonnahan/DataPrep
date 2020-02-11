@@ -3,13 +3,13 @@ samples: "all"  # This can be set to path of file containing individuals to be k
 outname: "test"
 local_run: 'true'
 query:
-  "cog1": "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.genotype-calls-matrixfmt.c1.HMB/with_fam/cog9904_9905_snp6_with_fam" #MODIFY: Prefix for PLINK files containing all of the query samples for ancestry inference
-  "cog2": "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.genotype-calls-matrixfmt.c1.HMB/with_fam/cog9906_500K_with_fam"
-  "stjude": "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.genotype-calls-matrixfmt.c1.HMB/with_fam/stjude_500K_with_fam"
+#  "cog1": "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.genotype-calls-matrixfmt.c1.HMB/with_fam/cog9904_9905_snp6_with_fam" #MODIFY: Prefix for PLINK files containing all of the query samples for ancestry inference
+#  "cog2": "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.genotype-calls-matrixfmt.c1.HMB/with_fam/cog9906_500K_with_fam"
+#  "stjude": "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.genotype-calls-matrixfmt.c1.HMB/with_fam/stjude_500K_with_fam"
 updates:
   chrom_key: "/home/pmonnaha/pmonnaha/misc/PlinkChrRename.txt"
-  allele_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/recodePlinkAlleles.txt"
-  ID_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/recodePlinkMarkers_noDups.txt"
+  allele_key: "none"
+  ID_key: "none"
   FixRef: "true"
 download_reference: 'true'
 reference:

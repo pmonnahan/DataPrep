@@ -25,6 +25,7 @@ BCFTOOLS = config['bcftools']['executable']
 
 # Make subdirectories
 if not os.path.exists("RefAnnotationData"): os.mkdir("RefAnnotationData")
+if not os.path.exists("OandE"): os.mkdir("OandE")
 for datset in QUERY.keys():
     if not os.path.exists(datset): os.mkdir(datset)
 
@@ -117,12 +118,24 @@ rule QCcombine_query:
         else:
             shell(f"{CMD_PREFIX}{config['plink']} plink --bfile {{params.pre}}-FixRef --make-bed --out {{params.pre}}-QC")
 
-rule mis_impute_prep:
+rule merge_inputs:
     input: "{rawdata}/{rawdata}-QC.bed"
-    output: "done.txt"
+    output: "workflow/done.txt"
+    params:
+        input_list = ",".join([f"{x}/{x}-QC" for x in QUERY.keys()])
     run:
-        if config['impute_prep'] == 'true':
-            shell(f"sh ")
+        if config['merge'] == 'true':
+            shell(f"scripts/mergeInputs.py -i {{params.input_list}} -d {os.getcwd()} -o {OUT} -p plink; touch workflow/done.txt")
+        else:
+            shell("touch workflow/done.txt")
+
+
+# rule mis_impute_prep:
+#     input: "{rawdata}/{rawdata}-QC.bed"
+#     output: "workflow/done.txt"
+#     run:
+#         if config['impute_prep'] == 'true':
+#             shell(f"sh ")
 
 #rule remove_intermediates:
     #input:
