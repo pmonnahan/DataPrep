@@ -1,45 +1,30 @@
-#!/bin/bash
 
-SCRIPT=`basename $0`
-# Ensure that arguments are passed to script, if not display help
-if [ "$#" -ne 1 ]; then
-cat << EOF
-Usage: sh ${SCRIPT} <WorkingDir>
+# Download all the Reference Data to Reformat the files
+# ----------------------------------------------------------------------------
 
-EOF
-  exit 1
+if [ ! -f ./RefAnnotationData/human_g1k_v37.fasta.gz ]; then
+
+echo
+echo Downloading Reference Data and index files from 1K Genomes and NCBI
+echo ----------------------------------------------
+
+echo Downloading: ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/human_g1k_v37.fasta.gz
+echo
+wget --directory-prefix=./RefAnnotationData/ ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/human_g1k_v37.fasta.gz
+wget --directory-prefix=./RefAnnotationData/ ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/human_g1k_v37.fasta.fai
+
 fi
 
-WorkingDir="$1"
-
-mkdir ./Reference
-
-# Retrieves the (default) Reference Genome from the IMPUTE Website
-				# ----------------------------------------------------------------------------------
-				# Collects the 1000Genome Reference Build from the Impute Site
-					#(https://mathgen.stats.ox.ac.uk/impute/1000GP_Phase3.html)
-					# Reference Build Specs: 1,000 Genomes haplotypes -- Phase 3 integrated variant set release in NCBI build 37 (hg19) coordinates
-					# Ref Build Updated Aug 3 2015
-
-					printf "\n\nRetrieving 1K Genome Phase 3 Ref Panel and hg19 Genetic Map from Impute2 Website \n-------------------------------------------------------------------------------\n\n\n"
-						wget --directory-prefix=${WorkingDir}/Reference/ https://mathgen.stats.ox.ac.uk/impute/1000GP_Phase3.tgz
-						wget --directory-prefix=${WorkingDir}/Reference/ https://mathgen.stats.ox.ac.uk/impute/1000GP_Phase3_chrX.tgz
+# Download the annotation files (make sure the the build version is correct) to flip/fix the alleles
+if [ ! -f ./RefAnnotationData/All_20170710.vcf.gz ]; then
+echo
+echo Downloading ftp://ftp.ncbi.nih.gov/snp/organisms/human_9606_b150_GRCh37p13/VCF/All_20170710.vcf.gz
+echo
+wget --directory-prefix=./RefAnnotationData/ ftp://ftp.ncbi.nih.gov/snp/organisms/human_9606_b150_GRCh37p13/VCF/All_20170710.vcf.gz
+wget --directory-prefix=./RefAnnotationData/ ftp://ftp.ncbi.nih.gov/snp/organisms/human_9606_b150_GRCh37p13/VCF/All_20170710.vcf.gz.tbi
 
 
-				#Unzip the packaged ref panel
-					printf "\n\nUnpackaging Ref Panel \n--------------------------\n\n"
-						tar -xzf ${WorkingDir}/Reference/1000GP_Phase3.tgz -C ${WorkingDir}Reference/
-						tar -xzf ${WorkingDir}/Reference/1000GP_Phase3_chrX.tgz -C ${WorkingDir}Reference/
+fi
 
-				# Since untar makes an additional directory, move all the files from the 1000GP_Phase3 folder and move it into the Ref Directory
-					printf "\n\nCleaning Up \n-------------------\n\n"
-						mv ${WorkingDir}/Reference/1000GP_Phase3/* ${WorkingDir}Reference/
-
-				# Delete the now empty directory and the tgz zipped Ref panel
-					rmdir ${WorkingDir}/Reference/1000GP_Phase3/
-					rm ${WorkingDir}/Reference/*.tgz
-
-        # Download BCF files
-          wget --directory-prefix=${WorkingDir}/Reference/ ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/release/20130502/supporting/bcf_files/ALL.chr\*
-
-
+# For tracking completion via snakemake
+echo "downloaded" > ./RefAnnotationData/downloaded.txt

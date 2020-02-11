@@ -2,9 +2,9 @@
 
 SCRIPT=`basename $0`
 # Ensure that arguments are passed to script, if not display help
-if [ "$#" -ne 9 ]; then
+if [ "$#" -ne 10 ]; then
 cat << EOF
-Usage: sh ${SCRIPT} <PlinkPrefix> <OutDir> <OutPrefix> <ChromKey> <DownloadRef> <DataPrepStep1> <DataPrepStep2> <DataPrepStep3> <SaveDataPrepIntermeds>
+Usage: sh ${SCRIPT} <PlinkPrefix> <OutDir> <OutPrefix> <ChromKey> <RefFasta> <RefVCF> <DownloadRef> <DataPrepStep1> <DataPrepStep2> <DataPrepStep3> <SaveDataPrepIntermeds>
 
 ChromKey is text file specifying how to rename chromosomes
 Subsequent arguments are all t/f and should likely stay set to t
@@ -17,13 +17,14 @@ RawData="$1"
 WorkingDir="$2"
 OUTPRE="$3"
 ChromKey="$4"
-DownloadRef="$5"
-DataPrepStep1="$6"
-DataPrepStep2="$7"
-DataPrepStep3="$8"
-SaveDataPrepIntermeds="$9"
+RefFasta="$5"
+RefVCF="$6"
+DataPrepStep1="$7"
+DataPrepStep2="$8"
+DataPrepStep3="$9"
+SaveDataPrepIntermeds="${10}"
 
-BASE=$(basename RawData)
+BASE=$(basename ${RawData})
 
 # =================
 ## IMPORTANT NOTES:
@@ -42,10 +43,12 @@ module load bcftools/1.9
 module load htslib/1.9
 module load plink/1.90b6.10
 
+# In case I ever get singularity working
 bcftools_Exec="bcftools"
 Plink_Exec="plink"
 bgzip_Exec="bgzip"
 gunzip_Exec="gunzip"
+
 
 # Set Working Directory
 # -------------------------------------------------
@@ -55,50 +58,17 @@ echo ----------------------------------------------
 mkdir -p ${WorkingDir}
 echo ${WorkingDir}
 
-	cd ${WorkingDir}
+cd ${WorkingDir}
+mkdir -p ./TEMP
 
+# bgzip Fasta file
+zcat "${RefFasta}" | bgzip > tmp.fasta.gz
 
-# Controls whether BCFTools +Fixref is performed on the dataset
-echo "Performing BCFTools +Fixref on dataset in ${RawData}"
-  echo ----------------------------------------------
+RefFasta="tmp.fasta.gz"
 
-#Make Temp Directory in which all Temp files will populate
-  mkdir -p ./TEMP
-  mkdir -p ./RefAnnotationData/
-
-# Download all the Reference Data to Reformat the files
-# ----------------------------------------------------------------------------
-
-if [ "${DownloadRef}" == "t" ]; then
-
-  echo
-  echo Downloading Reference Data and index files from 1K Genomes and NCBI
-  echo ----------------------------------------------
-
-  echo Downloading: ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/human_g1k_v37.fasta.gz
-  echo
-  wget --directory-prefix=./RefAnnotationData/ ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/human_g1k_v37.fasta.gz
-  wget --directory-prefix=./RefAnnotationData/ ftp://ftp.1000genomes.ebi.ac.uk/vol1/ftp/technical/reference/human_g1k_v37.fasta.fai
-
-  # Unzip Fasta file
-  ${gunzip_Exec} -d ./RefAnnotationData/human_g1k_v37.fasta.gz
-
-  # Rezip Fasta File in bgzip
-  ${bgzip_Exec} ./RefAnnotationData/human_g1k_v37.fasta
-  rm ./RefAnnotationData/human_g1k_v37.fasta
-
-
-# Download the annotation files (make sure the the build version is correct) to flip/fix the alleles
-  echo
-  echo Downloading ftp://ftp.ncbi.nih.gov/snp/organisms/human_9606_b150_GRCh37p13/VCF/All_20170710.vcf.gz
-  echo
-  wget --directory-prefix=./RefAnnotationData/ ftp://ftp.ncbi.nih.gov/snp/organisms/human_9606_b150_GRCh37p13/VCF/All_20170710.vcf.gz
-  wget --directory-prefix=./RefAnnotationData/ ftp://ftp.ncbi.nih.gov/snp/organisms/human_9606_b150_GRCh37p13/VCF/All_20170710.vcf.gz.tbi
-
-
+if [ ! -f "${RefVCF}.tbi" ]; then
+  tabix -p vcf "${RefVCF}"
 fi
-
-
 
 # STEP 1: Convert the Plink BED/BIM/FAM into a VCF into a BCF so that it may be fixed with BCFtools
 # --------------------------------------------------------------------------------------------------
@@ -116,7 +86,7 @@ if [ "${DataPrepStep1}" == "t" ]; then
 
 # Convert from a VCF into a BCF and also rename the chromosomes to match the reference fasta (where [chr]23 is X, 24 is Y, etc.)
 
-  printf "\n\nConverting VCF into a BCF with chromosome names that match the reference .fasta annotation \n\nNOTE: You may need to manually adjust ./Odyssey/0_DataPrepModule/RefAnnotationData/PlinkChrRename.txt depending on the fasta reference you use in order to match the chromosome names \n"
+  printf "\n\nConverting VCF into a BCF with chromosome names that match the reference .fasta annotation \n\nNOTE: You may need to manually adjust chromosome key depending on the fasta reference you use in order to match the chromosome names \n"
   echo ----------------------------------------------
   echo
   echo
@@ -129,14 +99,13 @@ fi
 # --------------------------------------------------------------------------------------------------
 
 if [ "${DataPrepStep2}" == "t" ]; then
-
 # Run bcftools +fixref to see the number of wrong SNPs
   printf "\n\nRun bcftools +fixref to first view the number of correctly annotated/aligned variants to the Reference annotation \n"
   echo ----------------------------------------------
   echo
   echo
 
-  ${bcftools_Exec} +fixref ./TEMP/DataFixStep1_${BASE}.bcf -- -f ./0_DataPrepModule/RefAnnotationData/human_g1k_v37.fasta.gz
+  ${bcftools_Exec} +fixref ./TEMP/DataFixStep1_${BASE}.bcf -- -f ${RefFasta}
 
 # Run bcftools to fix/swap the allels based on the downloaded annotation file
   printf "\n\nRun bcftools +fixref to fix allels based on the downloaded annotation file \n"
@@ -144,7 +113,7 @@ if [ "${DataPrepStep2}" == "t" ]; then
   echo
   echo
 
-  ${bcftools_Exec} +fixref ./TEMP/DataFixStep1_${BASE}.bcf -Ob -o ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf -- -d -f ./RefAnnotationData/human_g1k_v37.fasta.gz -i ./RefAnnotationData/All_20170710.vcf.gz
+  ${bcftools_Exec} +fixref ./TEMP/DataFixStep1_${BASE}.bcf -Ob -o ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf -- -d -f ${RefFasta} -i ${RefVCF}
 
 # Rerun the bcftool +fixref check to see if the file has been fixed and all unmatched alleles have been dropped
   printf "\n\nRun bcftools +fixref to see if the file has been fixed - all alleles are matched and all unmatched alleles have been dropped \n"
@@ -152,7 +121,7 @@ if [ "${DataPrepStep2}" == "t" ]; then
   echo
   echo
 
-  ${bcftools_Exec} +fixref ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf -- -f ./RefAnnotationData/human_g1k_v37.fasta.gz
+  ${bcftools_Exec} +fixref ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf -- -f ${RefFasta}
 
 fi
 
@@ -210,7 +179,7 @@ if [ "${DataPrepStep3}" == "t" ]; then
   echo
   echo
 
-  ${Plink_Exec} --bfile ./TEMP/DataFixStep4_${BASE}-RefFixSortedNoDups --update-sex ${RawData}.fam 3 --make-bed --out ${OUTPRE}-FixRef
+  ${Plink_Exec} --bfile ./TEMP/DataFixStep4_${BASE}-RefFixSortedNoDups --update-sex ${RawData}.fam 3 --make-bed --out ${OUTPRE}
 
 
   echo
@@ -238,6 +207,6 @@ if [ "${SaveDataPrepIntermeds}" == "f" ]; then
 
 fi
 
-
+rm tmp.fasta.gz
 
 
