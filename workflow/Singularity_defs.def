@@ -16,6 +16,18 @@ From: ubuntu:latest
 	# singularity exec ./Odyssey snptest -help
 ## ===========================================================
 
+%setup
+
+    mkdir ${SINGULARITY_ROOTFS}/scripts
+
+%files
+
+    /Users/pmonnaha/Documents/Research/ancestry/scripts/phase_map.py /scripts
+    /Users/pmonnaha/Documents/Research/ancestry/scripts/pop_map.py /scripts
+    /Users/pmonnaha/Documents/Research/ancestry/scripts/QC.py /scripts
+    /Users/pmonnaha/Documents/Research/ancestry/scripts/plot_karyograms.py /scripts
+    /Users/pmonnaha/Documents/Research/ancestry/scripts/rfmix2plink_tped.py /scripts
+
 %post
 
 
@@ -117,7 +129,7 @@ From: ubuntu:latest
 	wget --output-document=/usr/local/bin/MinicondaSetup.sh https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
 
 	# Congigure
-	bash /usr/local/bin/MinicondaSetup.sh -b -p /usr/local/bin/miniconda
+	bash /usr/local/bin/MinicondaSetup.sh -b -p -u /usr/local/bin/miniconda
 
 	# Remove the installation Clutter
 	rm /usr/local/bin/MinicondaSetup.sh

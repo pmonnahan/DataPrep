@@ -1,15 +1,24 @@
 #Modify all lines indicated with MODIFY
 samples: "all"  # This can be set to path of file containing individuals to be kept from merged query file. One sample per line.
-outname: "test"
-local_run: 'true'
+outname: "ewings"
+local_run: 'false'
 query:
+  aall0232: "/home/pmonnaha/shared/data/admiral/aall0232/plink"
+  aric: "/home/pmonnaha/shared/data/admiral/mergeALL_AA/QC_allRaces/aric"
 #  "cog1": "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.genotype-calls-matrixfmt.c1.HMB/with_fam/cog9904_9905_snp6_with_fam" #MODIFY: Prefix for PLINK files containing all of the query samples for ancestry inference
 #  "cog2": "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.genotype-calls-matrixfmt.c1.HMB/with_fam/cog9906_500K_with_fam"
 #  "stjude": "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.genotype-calls-matrixfmt.c1.HMB/with_fam/stjude_500K_with_fam"
+#  "michigan": "/home/spectorl/shared/BD_ES/michigan_cases/Ewing_Sarcoma_samples"
+#  "genesis": "/home/spectorl/shared/Ewing_WGS/VQSR/ES_common_HQ_SNPs_rsIDs"
+#  "phg663": "/home/pmonnaha/shared/Ewings_controls/files/phg663/phg663"
 updates:
   chrom_key: "/home/pmonnaha/pmonnaha/misc/PlinkChrRename.txt"
-  allele_key: "none"
-  ID_key: "none"
+#  allele_key: "none"
+#  ID_key: "none"
+  allele_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info
+  .c.MULTI/recodePlinkAlleles.txt"
+  ID_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.M
+  ULTI/recodePlinkMarkers_noDups.txt"
   FixRef: "true"
 download_reference: 'true'
 reference:
@@ -32,11 +41,13 @@ dir:
   main: "/home/spectorl/pmonnaha/ancestry/" #CURRENTLY UNUSED
   scratch: "/scratch.global/pmonnaha/"
   out: "/scratch.global/pmonnaha/snakemake_testing/"
-  code: "/home/spectorl/pmonnaha/code/"
+  code: "./scripts/"
 
-plink: "module load plink/1.90b6.10;"
-bgzip: "module load htslib/1.6; bgzip"
-use_singularity: 'false'
-singularity_image: 'AncestryInf.sif'
+cmd_prefix: "module load plink/1.90b6.10; module load htslib/1.6;"
+
+singularity:
+  use_singularity: 'false'
+  image: 'AncestryInf.sif'
+  code: '/scripts/'
 #plink: "plink"
 #bgzip: "bgzip"

@@ -13,10 +13,12 @@ TIME = i.strftime('%Y-%m-%d')
 # Specify config file
 configfile: "workflow/config.yml"
 
-if config['use_singularity'] == 'true' and config['singularity_image'] != "none":
-    CMD_PREFIX = f"singularity exec {config['singularity_image']} "
+if config['singularity']['use_singularity'] == 'true' and config['singularity']['image'] != "none":
+    CMD_PREFIX = f"singularity exec {config['singularity']['image']} "
+    CODE = config['singularity']['code']
 else:
-    CMD_PREFIX = ''
+    CMD_PREFIX = config['cmd_prefix']
+    CODE = config['dir']['code']
 
 # Parse config.yml file
 OUT = config['dir']['out']
@@ -65,7 +67,7 @@ rule update_alleles_IDs:
     params:
         in_pre = lambda wildcards: QUERY[wildcards.rawdata],
         prefix = "{rawdata}/{rawdata}",
-        exec = f"{CMD_PREFIX}{config['plink']} plink",
+        exec = f"{CMD_PREFIX} plink",
         alleles = config['updates']['allele_key'],
         ids = config['updates']['ID_key'],
         chrom_ids = config['updates']['chrom_key']
@@ -74,21 +76,21 @@ rule update_alleles_IDs:
         if config['updates']['ID_key'] != "none":
             if config['updates']['allele_key'] != "none":
                 if config['updates']['chrom_key'] != "none":
-                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --update-chr {{params.chrom_ids}} --make-bed --out {{params.in_pre}}.chrom ; {{params.exec}} --bfile {{params.in_pre}}.chrom --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles; {{params.exec}} --bfile {{params.prefix}}_alleles --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
+                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom ; {{params.exec}} --bfile {{params.in_pre}}.chrom --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles; {{params.exec}} --bfile {{params.prefix}}_alleles --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
                 else:
                     shell(f"{{params.exec}} --bfile {{params.in_pre}} --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles; {{params.exec}} --bfile {{params.prefix}}_alleles --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
             elif config['updates']['chrom_key'] != "none":
-                shell(f"{{params.exec}} --bfile {{params.in_pre}} --update-chr {{params.chrom_ids}} --make-bed --out {{params.in_pre}}.chrom; {{params.exec}} --bfile {{params.in_pre}}.chrom --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
+                shell(f"{{params.exec}} --bfile {{params.in_pre}} --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom; {{params.exec}} --bfile {{params.prefix}}.chrom --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
             else:
                 shell(f"{{params.exec}} --bfile {{params.in_pre}} --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
         else:
             if config['updates']['allele_key'] != "none":
                 if config['updates']['chrom_key'] != "none":
-                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --update-chr {{params.chrom_ids}} --make-bed --out {{params.in_pre}}.chrom; {{params.exec}} --bfile {{params.in_pre}}.chrom --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles")
+                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom; {{params.exec}} --bfile {{params.prefix}}.chrom --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles")
                 else:
                     shell(f"{{params.exec}} --bfile {{params.in_pre}} --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles_IDs")
             elif config['updates']['chrom_key'] != "none":
-                shell(f"{{params.exec}} --bfile {{params.in_pre}} --update-chr {{params.chrom_ids}} --make-bed --out {{params.in_pre}}_alleles_IDs")
+                shell(f"{{params.exec}} --bfile {{params.in_pre}} --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
             else:
                 shell(f"{{params.exec}} --bfile {{params.in_pre}} --make-bed --out {{params.prefix}}_alleles_IDs")
 
@@ -101,9 +103,9 @@ rule FixRef:
     run:
         if config['updates']['FixRef'] == "true":
             if config['download_reference'] == 'true':
-                    shell(f"sh scripts/DownloadRefs.sh; sh scripts/FixRef.sh {{wildcards.rawdata}}_alleles_IDs {{wildcards.rawdata}}/ {{wildcards.rawdata}}-FixRef {{params.chr_key}} {REFASTA} {REFVCF} t t t t")
+                    shell(f"sh {CODE}/DownloadRefs.sh; sh {CODE}/FixRef.sh {{wildcards.rawdata}}_alleles_IDs {{wildcards.rawdata}}/ {{wildcards.rawdata}}-FixRef {{params.chr_key}} {REFASTA} {REFVCF} t t t t")
         else:
-            shell(f"{CMD_PREFIX}{config['plink']} plink --bfile {{params.prefix}}_alleles_IDs --make-bed --out {{params.prefix}}-FixRef")
+            shell(f"{CMD_PREFIX} plink --bfile {{params.prefix}}_alleles_IDs --make-bed --out {{params.prefix}}-FixRef")
 
 rule QCcombine_query:
     input: "{rawdata}/{rawdata}-FixRef.bed"
@@ -114,18 +116,18 @@ rule QCcombine_query:
         hwe = config['QC']['hwe'], maf = config['QC']['maf'], mbs = config['QC']['mbs']
     run:
         if config['perform_QC'] == 'true':
-            shell(f"{CMD_PREFIX}{config['plink']} python scripts/QC.py -i {{params.pre}}-FixRef -d {{wildcards.rawdata}} -o {{wildcards.rawdata}}-QC -p plink -tvm1 {{params.tvm1}} -tgm {{params.tgm}} -tvm2 {{params.tvm2}} -hwe {{params.hwe}} -mbs {{params.mbs}} -maf {{params.maf}}")
+            shell(f"{CMD_PREFIX} python {CODE}/QC.py -i {{params.pre}}-FixRef -d {{wildcards.rawdata}} -o {{wildcards.rawdata}}-QC -p plink -tvm1 {{params.tvm1}} -tgm {{params.tgm}} -tvm2 {{params.tvm2}} -hwe {{params.hwe}} -mbs {{params.mbs}} -maf {{params.maf}}")
         else:
-            shell(f"{CMD_PREFIX}{config['plink']} plink --bfile {{params.pre}}-FixRef --make-bed --out {{params.pre}}-QC")
+            shell(f"{CMD_PREFIX} plink --bfile {{params.pre}}-FixRef --make-bed --out {{params.pre}}-QC")
 
 rule merge_inputs:
-    input: "{rawdata}/{rawdata}-QC.bed"
+    input: expand("{rawdata}/{rawdata}-QC.bed", rawdata=QUERY.keys())
     output: "workflow/done.txt"
     params:
         input_list = ",".join([f"{x}/{x}-QC" for x in QUERY.keys()])
     run:
         if config['merge'] == 'true':
-            shell(f"scripts/mergeInputs.py -i {{params.input_list}} -d {os.getcwd()} -o {OUT} -p plink; touch workflow/done.txt")
+            shell(f"{CMD_PREFIX} python {CODE}/mergeInputs.py -i {{params.input_list}} -d {os.getcwd()} -o {OUT} -p plink; touch workflow/done.txt")
         else:
             shell("touch workflow/done.txt")
 
