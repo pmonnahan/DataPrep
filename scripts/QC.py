@@ -66,26 +66,33 @@ def wrapQC(input, output, tvm1, tgm, tvm2, maf, hwe, mbs, plink):
 
     out2, err2 = calc_stats(f"{output}.geno_flt{tgm}", plink)
     DF_list = []
+    flt_strings = {'frq': f"frq_MAF < {maf}", 'hwe': f"hwe_P < {hwe}", 'lmiss': f"lmiss_F_MISS > {tvm2}", 'missing': f"missing_P < {mbs}"}
+    flt_string = []
     for stat in ['frq', 'hwe', 'lmiss', 'missing']:
         try:
             tdf = pd.read_csv(f"{output}.geno_flt{tgm}.{stat}", sep = r"\s+")
+            tdf = tdf.add_prefix(f"{stat}_")
+            tdf['SNP'] = tdf[f"{stat}_SNP"]
             if stat=="hwe":
-                tdf = tdf[tdf['TEST']=="UNAFF"]
+                tdf = tdf[tdf['hwe_TEST']=="UNAFF"]
             DF_list.append(tdf)
+            tdf = tdf.query(flt_strings[stat])
+            tdf[f"{stat}_SNP"].to_csv(f"{output}.fltdSNPs.{stat}.txt", header=False, index=False)
+            tdf['SNP'].to_csv(f"{output}.fltdSNPs.txt", header=False, index=False, mode='a')
         except FileNotFoundError:
             print(f"Did not find file: {output}.geno_flt{tgm}.{stat}")
     df = reduce(lambda df1, df2: pd.merge(df1, df2, on='SNP'), DF_list)
     # ARIC is failing HWE massively.c
-    df2 = df.query(f"MAF < {maf} | P_x < {hwe} | F_MISS > {tvm2} | P_y < {mbs}")
-    df3 = df.query(f"MAF < {maf}")
-    df4 = df.query(f"P_x < {hwe}")
-    df5 = df.query(f"F_MISS > {tvm2}")
-    df6 = df.query(f"P_y < {mbs}")
-    df2['SNP'].to_csv(f"{output}.fltdSNPs.txt", header=False, index=False)
-    df6.to_csv(f"{output}.fltdSNPs.mbs.txt", index=False)
-    df3.to_csv(f"{output}.fltdSNPs.maf.txt", index=False)
-    df4.to_csv(f"{output}.fltdSNPs.hwe.txt", index=False)
-    df5.to_csv(f"{output}.fltdSNPs.miss.txt", index=False)
+    # df2 = df.query(f"frq_MAF < {maf} | hwe_P < {hwe} | lmiss_F_MISS > {tvm2} | mbs_P < {mbs}")
+    # df3 = df.query(f"frq_MAF < {maf}")
+    # df4 = df.query(f"hwe_P < {hwe}")
+    # df5 = df.query(f"lmiss_F_MISS > {tvm2}")
+    # df6 = df.query(f"mbs_P < {mbs}")
+    # df2['SNP'].to_csv(f"{output}.fltdSNPs.txt", header=False, index=False)
+    # df6.to_csv(f"{output}.fltdSNPs.mbs.txt", index=False)
+    # df3.to_csv(f"{output}.fltdSNPs.maf.txt", index=False)
+    # df4.to_csv(f"{output}.fltdSNPs.hwe.txt", index=False)
+    # df5.to_csv(f"{output}.fltdSNPs.miss.txt", index=False)
     cmd = f"{plink} --bfile {output}.geno_flt{tgm} --list-duplicate-vars suppress-first --out {output}; tail -n +2 {output}.dupvar | cut -f 4 >> {output}.fltdSNPs.txt;"
     cmd += f"cat {output}.geno_flt{tgm}.bim | " + "awk '{if($5 == \"N\" || $6 == \"N\") print $2}' >> " + output + ".fltdSNPs.txt; "
     cmd += f"cut -f 2 {output}.geno_flt{tgm}.bim | sort | uniq -d >> {output}.fltdSNPs.txt; {plink} --bfile {output}.geno_flt{tgm} --exclude {output}.fltdSNPs.txt --make-bed --out {output}"

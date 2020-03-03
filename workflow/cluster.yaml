@@ -13,5 +13,9 @@ update_alleles_IDs:
   queue: mangi
   l: 'walltime=04:00:00,mem=32gb'
 
+FixRef:
+  queue: mangi
+  l: 'walltime=12:00:00,mem=32gb'
+
 
 

@@ -49,7 +49,6 @@ def parallelQC(arg_list, threads, function="wrapQC"):
 
 
 def merge_files(file, file_number, output, samples='all', plink='plink'):
-    pdb.set_trace()
     if file_number == 1:
         if samples == 'all': cmd = f"{plink} --bfile {file} --make-bed --allow-no-sex --out {output}"
         else: cmd = f"{plink} --bfile {file} --keep {samples} --make-bed --allow-no-sex --out {output}"
@@ -78,14 +77,18 @@ if __name__ == "__main__":
     parser.add_argument('-o', type=str, metavar='output', required=True, help='output name for combined PLINK file')
     parser.add_argument('-d', type=str, metavar='output_directory', required=True, help='directory to store all output')
     parser.add_argument('-p', type=str, metavar='plink_path', default="plink", help='')
+    parser.add_argument('-t', type=int, metavar='threads', default=1, help='')
     parser.add_argument('-s', type=str, metavar='sample_file', default='all',
                         help='File containing sample IDs to retain from merged plink files. One sample per line')
     args = parser.parse_args()
 
     files = args.i.split(",")
-    with open(f"{args.d}/files2merge.txt") as merge_file:
+
+    indir_dict = {}
+    with open(f"{args.d}/files2merge.txt", 'w') as merge_file:
         for file in files:
-            merge_file.write(f"{file}\n")
+            merge_file.write(f"{args.d}/{file}\n")
+            indir_dict[os.path.basename(file.strip())] = os.path.dirname(file)
 
     DF_dict = read_bims(f"{args.d}/files2merge.txt")
 
@@ -113,13 +116,13 @@ if __name__ == "__main__":
 
     # harmonize SNPids across data sets
     with open(f"{args.d}/files2premerge.txt", 'w') as mergefile:
-        mergefile.write(f"{args.d}/{reference}\n")
+        mergefile.write(f"{indir_dict[reference]}/{reference}\n")
         arg_list4 = []
         for name, data in Names_dict.items():
             data[['1_y', '1_x']].to_csv(f"{args.d}/{name}_id_updates", sep="\t", index=False, header=False)
             with open(f"{args.d}/{name}_flips", 'w') as flip_file:
                 flip_file.write('\n'.join(Flips_dict[name]))
-            arg_list4.append((f"{args.d}/{name}", f"{args.d}/{name}_id_updates", f"{args.d}/{name}_flips", f"{args.d}/{name}.ids", args.p))
+            arg_list4.append((f"{indir_dict[name]}/{name}", f"{args.d}/{name}_id_updates", f"{args.d}/{name}_flips", f"{args.d}/{name}.ids", args.p))
             mergefile.write(f"{args.d}/{name}.ids\n")
 
     outs = parallelQC(arg_list4, args.t, function="flipstrand_and_updateID")

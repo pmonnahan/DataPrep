@@ -66,10 +66,6 @@ zcat "${RefFasta}" | bgzip > tmp.fasta.gz
 
 RefFasta="tmp.fasta.gz"
 
-if [ ! -f "${RefVCF}.tbi" ]; then
-  tabix -p vcf "${RefVCF}"
-fi
-
 # STEP 1: Convert the Plink BED/BIM/FAM into a VCF into a BCF so that it may be fixed with BCFtools
 # --------------------------------------------------------------------------------------------------
 
@@ -99,6 +95,14 @@ fi
 # --------------------------------------------------------------------------------------------------
 
 if [ "${DataPrepStep2}" == "t" ]; then
+  if [ ${RefVCF} -e "-9" ]; then
+    ${bcftools_Exec} +fixref ./TEMP/DataFixStep1_${BASE}.bcf -- -f ${RefFasta}
+    ${bcftools_Exec} +fixref ./TEMP/DataFixStep1_${BASE}.bcf -Ob -o ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf -- -f ${RefFasta} -m flip -d
+    ${bcftools_Exec} +fixref ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf -- -f ${RefFasta}
+  else
+    if [ ! -f "${RefVCF}.tbi" ]; then
+    tabix -p vcf "${RefVCF}"
+    fi
 # Run bcftools +fixref to see the number of wrong SNPs
   printf "\n\nRun bcftools +fixref to first view the number of correctly annotated/aligned variants to the Reference annotation \n"
   echo ----------------------------------------------
@@ -122,7 +126,7 @@ if [ "${DataPrepStep2}" == "t" ]; then
   echo
 
   ${bcftools_Exec} +fixref ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf -- -f ${RefFasta}
-
+  fi
 fi
 
 

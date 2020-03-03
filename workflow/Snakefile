@@ -21,7 +21,7 @@ else:
     CODE = config['dir']['code']
 
 # Parse config.yml file
-OUT = config['dir']['out']
+OUT = config['outname']
 QUERY = config['query']
 BCFTOOLS = config['bcftools']['executable']
 
@@ -42,6 +42,8 @@ if config['updates']['FixRef'] == "true":
         assert (REFASTA != "none" and REFVCF != "none"), "Must provide a reference fasta and VCF in workflow/config.yml file"
         assert os.path.exists(config['reference']['refFasta']), f"Did not find reference fasta: {config['reference']['refFasta']}"
         assert os.path.exists(config['reference']['refVCF']), f"Did not find reference VCF: {config['reference']['refVCF']}"
+if config['use_refVCF'] == 'false':
+    REFVCF = -9
 
 if config['local_run'] == 'true':
     localrules: all, update_alleles_IDs, FixRef, QCcombine_query
@@ -73,26 +75,27 @@ rule update_alleles_IDs:
         chrom_ids = config['updates']['chrom_key']
     run:
         # TODO: add assertions? necessary?
+        shell(f"cut -f 2 {{params.in_pre}}.bim | sort | uniq -d > {{params.prefix}}.dups")
         if config['updates']['ID_key'] != "none":
             if config['updates']['allele_key'] != "none":
                 if config['updates']['chrom_key'] != "none":
-                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom ; {{params.exec}} --bfile {{params.in_pre}}.chrom --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles; {{params.exec}} --bfile {{params.prefix}}_alleles --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
+                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom ; {{params.exec}} --bfile {{params.prefix}}.chrom --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles; {{params.exec}} --bfile {{params.prefix}}_alleles --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
                 else:
-                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles; {{params.exec}} --bfile {{params.prefix}}_alleles --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
+                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles; {{params.exec}} --bfile {{params.prefix}}_alleles --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
             elif config['updates']['chrom_key'] != "none":
-                shell(f"{{params.exec}} --bfile {{params.in_pre}} --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom; {{params.exec}} --bfile {{params.prefix}}.chrom --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
+                shell(f"{{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom; {{params.exec}} --bfile {{params.prefix}}.chrom --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
             else:
-                shell(f"{{params.exec}} --bfile {{params.in_pre}} --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
+                shell(f"{{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
         else:
             if config['updates']['allele_key'] != "none":
                 if config['updates']['chrom_key'] != "none":
-                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom; {{params.exec}} --bfile {{params.prefix}}.chrom --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles")
+                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom; {{params.exec}} --bfile {{params.prefix}}.chrom --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles")
                 else:
-                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles_IDs")
+                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles_IDs")
             elif config['updates']['chrom_key'] != "none":
-                shell(f"{{params.exec}} --bfile {{params.in_pre}} --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
+                shell(f"{{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
             else:
-                shell(f"{{params.exec}} --bfile {{params.in_pre}} --make-bed --out {{params.prefix}}_alleles_IDs")
+                shell(f"{{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --make-bed --out {{params.prefix}}_alleles_IDs")
 
 rule FixRef:
     input: "{rawdata}/{rawdata}_alleles_IDs.bed",

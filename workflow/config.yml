@@ -15,12 +15,11 @@ updates:
   chrom_key: "/home/pmonnaha/pmonnaha/misc/PlinkChrRename.txt"
 #  allele_key: "none"
 #  ID_key: "none"
-  allele_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info
-  .c.MULTI/recodePlinkAlleles.txt"
-  ID_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.M
-  ULTI/recodePlinkMarkers_noDups.txt"
+  allele_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/recodePlinkAlleles.txt"
+  ID_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/recodePlinkMarkers_noDups.txt"
   FixRef: "true"
 download_reference: 'true'
+use_refVCF: 'false' # Use the reference VCF for RefFixing.  If set to false, this will assume that the reference fasta is correct.
 reference:
   refFasta: 'none'
   refVCF: 'none'
