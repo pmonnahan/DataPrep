@@ -50,6 +50,11 @@ if config['local_run'] == 'true':
 else:
     localrules: all
 
+def get_all_inputs(wildcards):
+    input_list = [f"{QUERY}.bed"]
+    if config['match_controls'] == 'true':
+        input_list.append(f"plink/{BASE}.genome.gz")
+    return(input_list)
 
 rule all:
     input:

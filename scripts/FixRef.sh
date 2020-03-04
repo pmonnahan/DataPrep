@@ -95,7 +95,7 @@ fi
 # --------------------------------------------------------------------------------------------------
 
 if [ "${DataPrepStep2}" == "t" ]; then
-  if [ ${RefVCF} -e "-9" ]; then
+  if [ ${RefVCF} -eq "-9" ]; then
     ${bcftools_Exec} +fixref ./TEMP/DataFixStep1_${BASE}.bcf -- -f ${RefFasta}
     ${bcftools_Exec} +fixref ./TEMP/DataFixStep1_${BASE}.bcf -Ob -o ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf -- -f ${RefFasta} -m flip -d
     ${bcftools_Exec} +fixref ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf -- -f ${RefFasta}
@@ -103,29 +103,29 @@ if [ "${DataPrepStep2}" == "t" ]; then
     if [ ! -f "${RefVCF}.tbi" ]; then
     tabix -p vcf "${RefVCF}"
     fi
-# Run bcftools +fixref to see the number of wrong SNPs
-  printf "\n\nRun bcftools +fixref to first view the number of correctly annotated/aligned variants to the Reference annotation \n"
-  echo ----------------------------------------------
-  echo
-  echo
+  # Run bcftools +fixref to see the number of wrong SNPs
+    printf "\n\nRun bcftools +fixref to first view the number of correctly annotated/aligned variants to the Reference annotation \n"
+    echo ----------------------------------------------
+    echo
+    echo
 
-  ${bcftools_Exec} +fixref ./TEMP/DataFixStep1_${BASE}.bcf -- -f ${RefFasta}
+    ${bcftools_Exec} +fixref ./TEMP/DataFixStep1_${BASE}.bcf -- -f ${RefFasta}
 
-# Run bcftools to fix/swap the allels based on the downloaded annotation file
-  printf "\n\nRun bcftools +fixref to fix allels based on the downloaded annotation file \n"
-  echo ----------------------------------------------
-  echo
-  echo
+  # Run bcftools to fix/swap the allels based on the downloaded annotation file
+    printf "\n\nRun bcftools +fixref to fix allels based on the downloaded annotation file \n"
+    echo ----------------------------------------------
+    echo
+    echo
 
-  ${bcftools_Exec} +fixref ./TEMP/DataFixStep1_${BASE}.bcf -Ob -o ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf -- -d -f ${RefFasta} -i ${RefVCF}
+    ${bcftools_Exec} +fixref ./TEMP/DataFixStep1_${BASE}.bcf -Ob -o ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf -- -d -f ${RefFasta} -i ${RefVCF}
 
-# Rerun the bcftool +fixref check to see if the file has been fixed and all unmatched alleles have been dropped
-  printf "\n\nRun bcftools +fixref to see if the file has been fixed - all alleles are matched and all unmatched alleles have been dropped \n"
-  echo ----------------------------------------------
-  echo
-  echo
+  # Rerun the bcftool +fixref check to see if the file has been fixed and all unmatched alleles have been dropped
+    printf "\n\nRun bcftools +fixref to see if the file has been fixed - all alleles are matched and all unmatched alleles have been dropped \n"
+    echo ----------------------------------------------
+    echo
+    echo
 
-  ${bcftools_Exec} +fixref ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf -- -f ${RefFasta}
+    ${bcftools_Exec} +fixref ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf -- -f ${RefFasta}
   fi
 fi
 
