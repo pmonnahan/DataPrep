@@ -32,10 +32,13 @@ QC:
   hwe: "0.0000001"  # p-value threshold for whether site follows hardy-weinberg
   mbs: "0.0000001"  # p-value treshold for test of whether missingness varies by sex
 impute_prep: 'true'
+chroms: "all"
+include_x: "no"
 bcftools:
   executable: "bcftools"
   threads: '6'
 merge: "true"
+delete_intermediates: "false"
 dir:
   main: "/home/spectorl/pmonnaha/ancestry/" #CURRENTLY UNUSED
   scratch: "/scratch.global/pmonnaha/"

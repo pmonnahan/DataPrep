@@ -29,7 +29,14 @@ BCFTOOLS = config['bcftools']['executable']
 if not os.path.exists("RefAnnotationData"): os.mkdir("RefAnnotationData")
 if not os.path.exists("OandE"): os.mkdir("OandE")
 for datset in QUERY.keys():
-    if not os.path.exists(datset): os.mkdir(datset)
+    if not os.path.exists(datset):
+        os.mkdir(datset)
+        os.mkdir(f"{datset}/tmp")
+
+CHROMS = config['chroms']
+if CHROMS == 'all':
+    CHROMS = [str(x) for x in range(1, 23)]
+    if config['include_x'] == 'yes': CHROMS.append('X')
 
 REFASTA = config['reference']['refFasta']
 REFVCF = config['reference']['refVCF']
@@ -51,29 +58,25 @@ else:
     localrules: all
 
 def get_all_inputs(wildcards):
-    input_list = [f"{QUERY}.bed"]
-    if config['match_controls'] == 'true':
-        input_list.append(f"plink/{BASE}.genome.gz")
+    input_list = expand(f"{{rawdata}}/{{rawdata}}-QC.bed", rawdata=QUERY.keys())
+    if config['merge'] == 'true':
+        input_list.append(f"{OUT}.bed")
+    if config['impute_prep'] == 'true':
+        input_list += expand(f"{{rawdata}}/{{rawdata}}.chr{{chrom}}.vcf.gz", rawdata=QUERY.keys(), chrom=CHROMS)
+    print(input_list)
     return(input_list)
 
 rule all:
-    input:
-        expand("{rawdata}/{rawdata}_alleles_IDs.bed", rawdata=QUERY.keys()),
-        expand("{rawdata}/{rawdata}-FixRef.bed", rawdata=QUERY.keys()),
-        expand("{rawdata}/{rawdata}-QC.bed", rawdata=QUERY.keys()),
-        "workflow/done.txt"
+    input: get_all_inputs
 
 rule clean:
-    params: "{wildcards.rawdata}"
-    shell:
-        "rm RefAnnotationData/*; rm -r {wildcards.rawdata}/*"
+    shell: "rm RefAnnotationData/*; rm -r {wildcards.rawdata}/*"
 
 rule update_alleles_IDs:
-    input: QUERY
-    output: "{rawdata}/{rawdata}_alleles_IDs.bed"
+    output: "{rawdata}/tmp/{rawdata}_alleles_IDs.bed"
     params:
         in_pre = lambda wildcards: QUERY[wildcards.rawdata],
-        prefix = "{rawdata}/{rawdata}",
+        prefix = "{rawdata}/tmp/{rawdata}",
         exec = f"{CMD_PREFIX} plink",
         alleles = config['updates']['allele_key'],
         ids = config['updates']['ID_key'],
@@ -103,49 +106,50 @@ rule update_alleles_IDs:
                 shell(f"{{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --make-bed --out {{params.prefix}}_alleles_IDs")
 
 rule FixRef:
-    input: "{rawdata}/{rawdata}_alleles_IDs.bed",
-    output: "{rawdata}/{rawdata}-FixRef.bed"
+    input: "{rawdata}/tmp/{rawdata}_alleles_IDs.bed",
+    output: "{rawdata}/tmp/{rawdata}-FixRef.bed"
     params:
-        prefix = "{rawdata}/{rawdata}",
+        prefix = "{rawdata}/tmp/{rawdata}",
         chr_key = config['updates']['chrom_key']
     run:
         if config['updates']['FixRef'] == "true":
             if config['download_reference'] == 'true':
-                    shell(f"sh {CODE}/DownloadRefs.sh; sh {CODE}/FixRef.sh {{wildcards.rawdata}}_alleles_IDs {{wildcards.rawdata}}/ {{wildcards.rawdata}}-FixRef {{params.chr_key}} {REFASTA} {REFVCF} t t t t")
+                    shell(f"sh {CODE}/DownloadRefs.sh; sh {CODE}/FixRef.sh {{wildcards.rawdata}}_alleles_IDs {{wildcards.rawdata}}/tmp/ {{wildcards.rawdata}}-FixRef {{params.chr_key}} {REFASTA} {REFVCF} t t t t")
+            else:
+                shell(f"sh {CODE}/FixRef.sh {{wildcards.rawdata}}_alleles_IDs {{wildcards.rawdata}}/tmp/ {{wildcards.rawdata}}-FixRef {{params.chr_key}} {REFASTA} {REFVCF} t t t t")
         else:
             shell(f"{CMD_PREFIX} plink --bfile {{params.prefix}}_alleles_IDs --make-bed --out {{params.prefix}}-FixRef")
 
 rule QCcombine_query:
-    input: "{rawdata}/{rawdata}-FixRef.bed"
+    input: "{rawdata}/tmp/{rawdata}-FixRef.bed"
     output: "{rawdata}/{rawdata}-QC.bed"
     params:
-        pre = "{rawdata}/{rawdata}",
+        pre1 = "{rawdata}/tmp/{rawdata}",
+        pre2 = "{rawdata}/{rawdata}",
         tvm1 = config['QC']['vm1'], tgm = config['QC']['gm'], tvm2 = config['QC']['vm2'],
-        hwe = config['QC']['hwe'], maf = config['QC']['maf'], mbs = config['QC']['mbs']
+        hwe = config['QC']['hwe'], maf = config['QC']['maf'], mbs = config['QC']['mbs'],
     run:
         if config['perform_QC'] == 'true':
-            shell(f"{CMD_PREFIX} python {CODE}/QC.py -i {{params.pre}}-FixRef -d {{wildcards.rawdata}} -o {{wildcards.rawdata}}-QC -p plink -tvm1 {{params.tvm1}} -tgm {{params.tgm}} -tvm2 {{params.tvm2}} -hwe {{params.hwe}} -mbs {{params.mbs}} -maf {{params.maf}}")
+            cmd = f"{CMD_PREFIX} python {CODE}/QC.py -i {{params.pre1}}-FixRef -d {{wildcards.rawdata}}/tmp/ -o {{wildcards.rawdata}}-QC -p plink -tvm1 {{params.tvm1}} -tgm {{params.tgm}} -tvm2 {{params.tvm2}} -hwe {{params.hwe}} -mbs {{params.mbs}} -maf {{params.maf}}; mv {{params.pre1}}-QC.bed {{wildcards.rawdata}}; mv {{params.pre1}}-QC.bim {{wildcards.rawdata}}; mv {{params.pre1}}-QC.fam {{wildcards.rawdata}}"
+            if config['delete_intermediates'] == 'true': cmd += f"; rm -r {{wildcards.rawdata}}/tmp/"
+            shell(cmd)
         else:
-            shell(f"{CMD_PREFIX} plink --bfile {{params.pre}}-FixRef --make-bed --out {{params.pre}}-QC")
+            shell(f"{CMD_PREFIX} plink --bfile {{params.pre1}}-FixRef --make-bed --out {{params.pre2}}-QC")
 
 rule merge_inputs:
     input: expand("{rawdata}/{rawdata}-QC.bed", rawdata=QUERY.keys())
-    output: "workflow/done.txt"
+    output: f"{OUT}.bed"
     params:
         input_list = ",".join([f"{x}/{x}-QC" for x in QUERY.keys()])
     run:
         if config['merge'] == 'true':
-            shell(f"{CMD_PREFIX} python {CODE}/mergeInputs.py -i {{params.input_list}} -d {os.getcwd()} -o {OUT} -p plink; touch workflow/done.txt")
-        else:
-            shell("touch workflow/done.txt")
+            shell(f"{CMD_PREFIX} python {CODE}/mergeInputs.py -i {{params.input_list}} -d {os.getcwd()} -o {OUT} -p plink")
 
-
-# rule mis_impute_prep:
-#     input: "{rawdata}/{rawdata}-QC.bed"
-#     output: "workflow/done.txt"
-#     run:
-#         if config['impute_prep'] == 'true':
-#             shell(f"sh ")
-
-#rule remove_intermediates:
-    #input:
+rule mis_impute_prep:
+    input: "{rawdata}/{rawdata}-QC.bed"
+    output: "{rawdata}/{rawdata}.chr{chrom}.vcf.gz"
+    params: pre = "{rawdata}/{rawdata}"
+    run:
+        if config['impute_prep'] == 'true':
+            shell(f"plink --bfile {{params.pre}}-QC --chr {{wildcards.chrom}} --recode vcf-iid --out {{params.pre}}.chr{{wildcards.chrom}};"
+                  f" bcftools sort -Oz -o {{params.pre}}.chr{{wildcards.chrom}}.vcf.gz {{params.pre}}.chr{{wildcards.chrom}}.vcf; rm {{params.pre}}.chr{{wildcards.chrom}}.vcf")
