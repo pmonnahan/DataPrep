@@ -66,6 +66,10 @@ zcat "${RefFasta}" | bgzip > tmp.fasta.gz
 
 RefFasta="tmp.fasta.gz"
 
+if [ ! -f "${RefVCF}.tbi" ]; then
+    tabix -p vcf "${RefVCF}"
+fi
+
 # STEP 1: Convert the Plink BED/BIM/FAM into a VCF into a BCF so that it may be fixed with BCFtools
 # --------------------------------------------------------------------------------------------------
 
@@ -95,14 +99,14 @@ fi
 # --------------------------------------------------------------------------------------------------
 
 if [ "${DataPrepStep2}" == "t" ]; then
-  if [ ${RefVCF} -eq "-9" ]; then
-    ${bcftools_Exec} +fixref ./TEMP/DataFixStep1_${BASE}.bcf -- -f ${RefFasta}
-    ${bcftools_Exec} +fixref ./TEMP/DataFixStep1_${BASE}.bcf -Ob -o ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf -- -f ${RefFasta} -m flip -d
-    ${bcftools_Exec} +fixref ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf -- -f ${RefFasta}
-  else
-    if [ ! -f "${RefVCF}.tbi" ]; then
-    tabix -p vcf "${RefVCF}"
-    fi
+#  if [ ${RefVCF} -eq "-9" ]; then
+#    ${bcftools_Exec} +fixref ./TEMP/DataFixStep1_${BASE}.bcf -- -f ${RefFasta}
+#    ${bcftools_Exec} +fixref ./TEMP/DataFixStep1_${BASE}.bcf -Ob -o ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf -- -f ${RefFasta} -m flip -d
+#    ${bcftools_Exec} +fixref ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf -- -f ${RefFasta}
+#  else
+#    if [ ! -f "${RefVCF}.tbi" ]; then
+#    tabix -p vcf "${RefVCF}"
+#    fi
   # Run bcftools +fixref to see the number of wrong SNPs
     printf "\n\nRun bcftools +fixref to first view the number of correctly annotated/aligned variants to the Reference annotation \n"
     echo ----------------------------------------------
@@ -150,7 +154,7 @@ if [ "${DataPrepStep3}" == "t" ]; then
   echo
   echo
 
-  ${Plink_Exec} --bcf ./TEMP/DataFixStep3_${BASE}-RefFixedSorted.bcf --const-fid 0 --make-bed --out ./TEMP/DataFixStep3_${BASE}-RefFixSorted
+  ${Plink_Exec} --bcf ./TEMP/DataFixStep3_${BASE}-RefFixedSorted.bcf --keep-allele-order --const-fid 0 --make-bed --out ./TEMP/DataFixStep3_${BASE}-RefFixSorted
 
 
 # Finally Remove any positional duplicates
@@ -172,7 +176,7 @@ if [ "${DataPrepStep3}" == "t" ]; then
   echo
   echo
 
-  ${Plink_Exec} --bfile ./TEMP/DataFixStep3_${BASE}-RefFixSorted --const-fid 0 --exclude ./TEMP/Dups2Remove.dupvar --make-bed --out ./TEMP/DataFixStep4_${BASE}-RefFixSortedNoDups
+  ${Plink_Exec} --bfile ./TEMP/DataFixStep3_${BASE}-RefFixSorted --keep-allele-order --const-fid 0 --exclude ./TEMP/Dups2Remove.dupvar --make-bed --out ./TEMP/DataFixStep4_${BASE}-RefFixSortedNoDups
 
 
 

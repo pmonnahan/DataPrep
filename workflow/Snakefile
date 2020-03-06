@@ -27,6 +27,7 @@ BCFTOOLS = config['bcftools']['executable']
 
 # Make subdirectories
 if not os.path.exists("RefAnnotationData"): os.mkdir("RefAnnotationData")
+if not os.path.exists("accessory"): os.mkdir("accessory")
 if not os.path.exists("OandE"): os.mkdir("OandE")
 for datset in QUERY.keys():
     if not os.path.exists(datset):
@@ -109,7 +110,7 @@ rule download_Refs:
     shell: "sh {CODE}/DownloadRefs.sh"
 
 rule FixRef:
-    input: "{rawdata}/tmp/{rawdata}_alleles_IDs.bed", REFFASTA, REFVCF
+    input: "{rawdata}/tmp/{rawdata}_alleles_IDs.bed", REFASTA, REFVCF
     output: "{rawdata}/tmp/{rawdata}-FixRef.bed"
     params:
         prefix = "{rawdata}/tmp/{rawdata}",
@@ -133,7 +134,7 @@ rule QCcombine_query:
         hwe = config['QC']['hwe'], maf = config['QC']['maf'], mbs = config['QC']['mbs'],
     run:
         if config['perform_QC'] == 'true':
-            cmd = f"{CMD_PREFIX} python {CODE}/QC.py -i {{params.pre1}}-FixRef -d {{wildcards.rawdata}}/tmp/ -o {{wildcards.rawdata}}-QC -p plink -tvm1 {{params.tvm1}} -tgm {{params.tgm}} -tvm2 {{params.tvm2}} -hwe {{params.hwe}} -mbs {{params.mbs}} -maf {{params.maf}}; mv {{params.pre1}}-QC.bed {{wildcards.rawdata}}; mv {{params.pre1}}-QC.bim {{wildcards.rawdata}}; mv {{params.pre1}}-QC.fam {{wildcards.rawdata}}; cp {wildcards.rawdata}/tmp/TEMP/DataFixStep3_{wildcards.rawdata}_alleles_IDs-RefFixSorted.bim accessory"
+            cmd = f"{CMD_PREFIX} python {CODE}/QC.py -i {{params.pre1}}-FixRef -d {{wildcards.rawdata}}/tmp/ -o {{wildcards.rawdata}}-QC -p plink -tvm1 {{params.tvm1}} -tgm {{params.tgm}} -tvm2 {{params.tvm2}} -hwe {{params.hwe}} -mbs {{params.mbs}} -maf {{params.maf}}; mv {{params.pre1}}-QC.bed {{wildcards.rawdata}}; mv {{params.pre1}}-QC.bim {{wildcards.rawdata}}; mv {{params.pre1}}-QC.fam {{wildcards.rawdata}}; cp {wildcards.rawdata}/tmp/TEMP/DataFixStep3_{wildcards.rawdata}_alleles_IDs-RefFixSorted.bim accessory/"
             if config['delete_intermediates'] == 'true': cmd += f"; rm -r {{wildcards.rawdata}}/tmp/"
             shell(cmd)
         else:
