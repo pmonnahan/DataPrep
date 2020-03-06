@@ -3,23 +3,22 @@ samples: "all"  # This can be set to path of file containing individuals to be k
 outname: "ewings"
 local_run: 'false'
 query:
-  aall0232: "/home/pmonnaha/shared/data/admiral/aall0232/plink"
-  aric: "/home/pmonnaha/shared/data/admiral/mergeALL_AA/QC_allRaces/aric"
+#  aall0232: "/home/pmonnaha/shared/data/admiral/aall0232/plink"
+#  aric: "/home/pmonnaha/shared/data/admiral/mergeALL_AA/QC_allRaces/aric"
 #  "cog1": "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.genotype-calls-matrixfmt.c1.HMB/with_fam/cog9904_9905_snp6_with_fam" #MODIFY: Prefix for PLINK files containing all of the query samples for ancestry inference
 #  "cog2": "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.genotype-calls-matrixfmt.c1.HMB/with_fam/cog9906_500K_with_fam"
 #  "stjude": "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.genotype-calls-matrixfmt.c1.HMB/with_fam/stjude_500K_with_fam"
-#  "michigan": "/home/spectorl/shared/BD_ES/michigan_cases/Ewing_Sarcoma_samples"
-#  "genesis": "/home/spectorl/shared/Ewing_WGS/VQSR/ES_common_HQ_SNPs_rsIDs"
-#  "phg663": "/home/pmonnaha/shared/Ewings_controls/files/phg663/phg663"
+  "michigan": "/home/spectorl/shared/BD_ES/michigan_cases/Ewing_Sarcoma_samples"
+  "genesis": "/home/spectorl/shared/Ewing_WGS/VQSR/ES_common_HQ_SNPs_rsIDs"
+  "phg663": "/home/pmonnaha/shared/Ewings_controls/files/phg663/phg663"
 updates:
   chrom_key: "/home/pmonnaha/pmonnaha/misc/PlinkChrRename.txt"
-#  allele_key: "none"
-#  ID_key: "none"
-  allele_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/recodePlinkAlleles.txt"
-  ID_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/recodePlinkMarkers_noDups.txt"
+  allele_key: "none"
+  ID_key: "none"
+#  allele_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/recodePlinkAlleles.txt"
+#  ID_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/recodePlinkMarkers_noDups.txt"
   FixRef: "true"
 download_reference: 'true'
-use_refVCF: 'false' # Use the reference VCF for RefFixing.  If set to false, this will assume that the reference fasta is correct.
 reference:
   refFasta: 'none'
   refVCF: 'none'
@@ -45,7 +44,7 @@ dir:
   out: "/scratch.global/pmonnaha/snakemake_testing/"
   code: "./scripts/"
 
-cmd_prefix: "module load plink/1.90b6.10; module load htslib/1.6;"
+cmd_prefix: "module load plink/1.90b6.10; module load htslib/1.6; module load bcftools/1.9;"
 
 singularity:
   use_singularity: 'false'
