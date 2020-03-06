@@ -70,6 +70,13 @@ def read_bims(file_key):
     return(DF_dict)
 
 
+def flip_scan(input, output, plink):
+    cmd = f"{plink} --bfile {input} --flip-scan --out {output}"
+    pp1 = subprocess.Popen(cmd, shell=True)  # Run cmd1
+    out1, err1 = pp1.communicate()
+
+    return (output)
+
 # Set up command line execution
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='')
@@ -146,6 +153,8 @@ if __name__ == "__main__":
 
     # First merge attempt is likely to have strand flip errors
     out1, err1 = merge_files(f"{args.d}/files2merge.txt", len(files), f"{args.d}/{args.o}", samples=args.s, plink=args.p)
+
+
 
     # TODO: perform flip-scan via plink to look for incorrect strand assignment in a subset of sample after finding best-flipped combon
 

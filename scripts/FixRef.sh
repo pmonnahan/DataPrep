@@ -130,7 +130,7 @@ if [ "${DataPrepStep2}" == "t" ]; then
     echo
 
     ${bcftools_Exec} +fixref ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf -- -f ${RefFasta}
-  fi
+#  fi
 fi
 
 

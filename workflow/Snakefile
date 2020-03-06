@@ -166,5 +166,5 @@ rule mis_impute_prep:
         pre = "{rawdata}/{rawdata}",
     run:
         if config['impute_prep'] == 'true':
-            shell(f"{CMD_PREFIX} plink --bfile {{params.pre}}-QC --chr {{wildcards.chrom}} --recode vcf-iid --out {{params.pre}}.chr{{wildcards.chrom}};"
+            shell(f"{CMD_PREFIX} plink --bfile {{params.pre}}-QC-Ref --chr {{wildcards.chrom}} --recode vcf-iid --keep-allele-order --out {{params.pre}}.chr{{wildcards.chrom}};"
                   f" {CMD_PREFIX} bcftools sort -Oz -o {{params.pre}}.chr{{wildcards.chrom}}.vcf.gz {{params.pre}}.chr{{wildcards.chrom}}.vcf; rm {{params.pre}}.chr{{wildcards.chrom}}.vcf")
