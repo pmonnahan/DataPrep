@@ -87,23 +87,23 @@ rule update_alleles_IDs:
         if config['updates']['ID_key'] != "none":
             if config['updates']['allele_key'] != "none":
                 if config['updates']['chrom_key'] != "none":
-                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom ; {{params.exec}} --bfile {{params.prefix}}.chrom --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles; {{params.exec}} --bfile {{params.prefix}}_alleles --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
+                    shell(f"sed -i 's/_/-/g' {{params.in_pre}}.fam; {{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom ; {{params.exec}} --bfile {{params.prefix}}.chrom --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles; {{params.exec}} --bfile {{params.prefix}}_alleles --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
                 else:
-                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles; {{params.exec}} --bfile {{params.prefix}}_alleles --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
+                    shell(f"sed -i 's/_/-/g' {{params.in_pre}}.fam; {{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles; {{params.exec}} --bfile {{params.prefix}}_alleles --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
             elif config['updates']['chrom_key'] != "none":
-                shell(f"{{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom; {{params.exec}} --bfile {{params.prefix}}.chrom --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
+                shell(f"sed -i 's/_/-/g' {{params.in_pre}}.fam; {{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom; {{params.exec}} --bfile {{params.prefix}}.chrom --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
             else:
-                shell(f"{{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
+                shell(f"sed -i 's/_/-/g' {{params.in_pre}}.fam; {{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
         else:
             if config['updates']['allele_key'] != "none":
                 if config['updates']['chrom_key'] != "none":
-                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom; {{params.exec}} --bfile {{params.prefix}}.chrom --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles")
+                    shell(f"sed -i 's/_/-/g' {{params.in_pre}}.fam; {{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom; {{params.exec}} --bfile {{params.prefix}}.chrom --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles")
                 else:
-                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles_IDs")
+                    shell(f"sed -i 's/_/-/g' {{params.in_pre}}.fam; {{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles_IDs")
             elif config['updates']['chrom_key'] != "none":
-                shell(f"{{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
+                shell(f"sed -i 's/_/-/g' {{params.in_pre}}.fam; {{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
             else:
-                shell(f"{{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --make-bed --out {{params.prefix}}_alleles_IDs")
+                shell(f"sed -i 's/_/-/g' {{params.in_pre}}.fam; {{params.exec}} --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --make-bed --out {{params.prefix}}_alleles_IDs")
 
 rule download_Refs:
     output: REFVCF, REFASTA

@@ -82,7 +82,7 @@ if [ "${DataPrepStep1}" == "t" ]; then
   echo
   echo
 
-  ${Plink_Exec} --bfile $RawData --recode vcf --const-fid 0 --out ./TEMP/DataFixStep1_${BASE}
+  ${Plink_Exec} --bfile $RawData --recode vcf --out ./TEMP/DataFixStep1_${BASE}
 
 # Convert from a VCF into a BCF and also rename the chromosomes to match the reference fasta (where [chr]23 is X, 24 is Y, etc.)
 
@@ -154,7 +154,7 @@ if [ "${DataPrepStep3}" == "t" ]; then
   echo
   echo
 
-  ${Plink_Exec} --bcf ./TEMP/DataFixStep3_${BASE}-RefFixedSorted.bcf --keep-allele-order --const-fid 0 --make-bed --out ./TEMP/DataFixStep3_${BASE}-RefFixSorted
+  ${Plink_Exec} --bcf ./TEMP/DataFixStep3_${BASE}-RefFixedSorted.bcf --keep-allele-order --make-bed --out ./TEMP/DataFixStep3_${BASE}-RefFixSorted
 
 
 # Finally Remove any positional duplicates
@@ -166,7 +166,7 @@ if [ "${DataPrepStep3}" == "t" ]; then
   echo
   echo
 
-  ${Plink_Exec} --bfile ./TEMP/DataFixStep3_${BASE}-RefFixSorted --const-fid 0 --list-duplicate-vars ids-only suppress-first --out ./TEMP/Dups2Remove
+  ${Plink_Exec} --bfile ./TEMP/DataFixStep3_${BASE}-RefFixSorted --list-duplicate-vars ids-only suppress-first --out ./TEMP/Dups2Remove
 
   # Report Number of duplicates:
   DuplicateNumber="$(wc ./TEMP/Dups2Remove.dupvar | awk '{print $1}')"
@@ -176,7 +176,7 @@ if [ "${DataPrepStep3}" == "t" ]; then
   echo
   echo
 
-  ${Plink_Exec} --bfile ./TEMP/DataFixStep3_${BASE}-RefFixSorted --keep-allele-order --const-fid 0 --exclude ./TEMP/Dups2Remove.dupvar --make-bed --out ./TEMP/DataFixStep4_${BASE}-RefFixSortedNoDups
+  ${Plink_Exec} --bfile ./TEMP/DataFixStep3_${BASE}-RefFixSorted --keep-allele-order --exclude ./TEMP/Dups2Remove.dupvar --make-bed --out ./TEMP/DataFixStep4_${BASE}-RefFixSortedNoDups
 
 
 
@@ -187,7 +187,7 @@ if [ "${DataPrepStep3}" == "t" ]; then
   echo
   echo
 
-  ${Plink_Exec} --bfile ./TEMP/DataFixStep4_${BASE}-RefFixSortedNoDups --const-fid 0 --update-sex ${RawData}.fam 3 --make-bed --out ${OUTPRE}
+  ${Plink_Exec} --bfile ./TEMP/DataFixStep4_${BASE}-RefFixSortedNoDups --update-sex ${RawData}.fam 3 --make-bed --out ${OUTPRE}
 
 
   echo
