@@ -35,10 +35,8 @@ def var_flt(bfile, keptVariants, output, plink):
     return(output)
 
 
-def parallelQC(arg_list, threads, function="wrapQC"):
+def parallelQC(arg_list, threads, function="flipstrand_and_updateID"):
     pool = multiprocessing.Pool(threads)
-    if function == "wrapQC":
-        outfiles = pool.starmap(wrapQC, arg_list)
     if function == "flipstrand_and_updateID":
         outfiles = pool.starmap(flipstrand_and_updateID, arg_list)
     if function == "var_flt":
@@ -50,7 +48,7 @@ def parallelQC(arg_list, threads, function="wrapQC"):
 
 def merge_files(file, file_number, output, samples='all', plink='plink'):
     if file_number == 1:
-        if samples == 'all': cmd = f"{plink} --bfile {file} --make-bed --allow-no-sex --out {output}"
+        if samples == 'all': cmd = f"{plink} --bfile {file} --make-bed --allow-no-sex --keep-allele-order --out {output}"
         else: cmd = f"{plink} --bfile {file} --keep {samples} --make-bed --allow-no-sex --out {output}"
     else:
         if samples == 'all': cmd = f"{plink} --merge-list {file} --make-bed --allow-no-sex --out {output}"
@@ -108,7 +106,7 @@ if __name__ == "__main__":
         df1 = DF_dict[comb[0]]
         df2 = DF_dict[comb[1]]
         df = pd.merge(df1, df2, on=(0,3))
-        # pdb.set_trace()
+        pdb.set_trace()
         # TODO: need to catch when names match, alleles match, but positions do not.
         bad_names = df[df['1_x'] != df['1_y']]
         bad_names_flips = bad_names[(bad_names['4_x'] != bad_names['4_y']) & (bad_names['4_x'] != bad_names['5_y']) & (bad_names['5_x'] != bad_names['4_y']) & (bad_names['5_x'] != bad_names['5_y'])]
@@ -153,6 +151,8 @@ if __name__ == "__main__":
 
     # First merge attempt is likely to have strand flip errors
     out1, err1 = merge_files(f"{args.d}/files2merge.txt", len(files), f"{args.d}/{args.o}", samples=args.s, plink=args.p)
+
+    # Restore Ref/Alt alleles using bim file of first dataset?
 
 
 

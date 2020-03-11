@@ -11,6 +11,8 @@ query:
   "michigan": "/home/spectorl/shared/BD_ES/michigan_cases/Ewing_Sarcoma_samples"
   "genesis": "/home/spectorl/shared/Ewing_WGS/VQSR/ES_common_HQ_SNPs_rsIDs"
   "phg663": "/home/pmonnaha/shared/Ewings_controls/files/phg663/phg663"
+case_datasets: "michigan,genesis"
+control_datasets: "phg663"
 updates:
   chrom_key: "/home/pmonnaha/pmonnaha/misc/PlinkChrRename.txt"
   allele_key: "none"

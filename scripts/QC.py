@@ -56,9 +56,6 @@ def calc_stats(bfile, plink):
 
 def wrapQC(input, output, tvm1, tgm, tvm2, maf, hwe, mbs, plink):
 
-    # TODO: STILL NEED TO DO REFALT SWITCHING...maybe this is best left to user to do prior to running pipeline.  Each array needs its own key to update.  Hard to generalize without requireing each input file to have associated key
-    # TODO: Add filtering for related samples
-    # TODO: parallelize using pool
     out1, err1 = var_miss(input, tvm1, f"{output}.var_miss{tvm1}", plink)
     out2, err2 = geno_miss(f"{output}.var_miss{tvm1}", tgm, f"{output}.geno_miss{tgm}", plink)
     out3, err3 = geno_flt(input, f"{output}.geno_miss{tgm}.fam",

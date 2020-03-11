@@ -13,8 +13,22 @@ TIME = i.strftime('%Y-%m-%d')
 # Specify config file
 configfile: "workflow/config.yml"
 
+REFASTA = config['reference']['refFasta']
+REFVCF = config['reference']['refVCF']
+
+if config['updates']['FixRef'] == "true":
+    if config['download_reference'] == 'true':
+        REFASTA = f"{os.getcwd()}/RefAnnotationData/human_g1k_v37.fasta.gz"
+        REFVCF = f"{os.getcwd()}/RefAnnotationData/All_20170710.vcf.gz"
+    else:
+        assert (REFASTA != "none" and REFVCF != "none"), "Must provide a reference fasta and VCF in workflow/config.yml file"
+        assert os.path.exists(config['reference']['refFasta']), f"Did not find reference fasta: {config['reference']['refFasta']}"
+        assert os.path.exists(config['reference']['refVCF']), f"Did not find reference VCF: {config['reference']['refVCF']}"
+
 if config['singularity']['use_singularity'] == 'true' and config['singularity']['image'] != "none":
-    CMD_PREFIX = f"singularity exec {config['singularity']['image']} "
+    bind_paths = ",".join(set([os.path.dirname(x) for x in [QUERY.items(), REFASTA]] + ['OandE', 'accessory'] + QUERY.keys()))
+    CMD_PREFIX = f"set +u; {config['singularity']['module']}; singularity exec --bind {bind_paths},{os.getcwd()} {config['singularity']['image']}"
+    #He has to specify version of singularity...
     CODE = config['singularity']['code']
 else:
     CMD_PREFIX = config['cmd_prefix']
@@ -39,18 +53,6 @@ if CHROMS == 'all':
     CHROMS = [str(x) for x in range(1, 23)]
     if config['include_x'] == 'yes': CHROMS.append('X')
 
-REFASTA = config['reference']['refFasta']
-REFVCF = config['reference']['refVCF']
-
-if config['updates']['FixRef'] == "true":
-    if config['download_reference'] == 'true':
-        REFASTA = f"{os.getcwd()}/RefAnnotationData/human_g1k_v37.fasta.gz"
-        REFVCF = f"{os.getcwd()}/RefAnnotationData/All_20170710.vcf.gz"
-    else:
-        assert (REFASTA != "none" and REFVCF != "none"), "Must provide a reference fasta and VCF in workflow/config.yml file"
-        assert os.path.exists(config['reference']['refFasta']), f"Did not find reference fasta: {config['reference']['refFasta']}"
-        assert os.path.exists(config['reference']['refVCF']), f"Did not find reference VCF: {config['reference']['refVCF']}"
-
 if config['local_run'] == 'true':
     localrules: all, update_alleles_IDs, FixRef, QCcombine_query
 else:
@@ -64,6 +66,7 @@ def get_all_inputs(wildcards):
         input_list += expand(f"{{rawdata}}/{{rawdata}}.chr{{chrom}}.vcf.gz", rawdata=QUERY.keys(), chrom=CHROMS)
     if config['download_reference'] == 'true':
         input_list += [REFASTA, REFVCF]
+    input_list += expand(f"{{rawdata}}/.{{rawdata}}-PhenoFixed", rawdata=QUERY.keys())
     return(input_list)
 
 rule all:
@@ -141,7 +144,7 @@ rule QCcombine_query:
             shell(f"{CMD_PREFIX} plink --bfile {{params.pre1}}-FixRef --make-bed --out {{params.pre2}}-QC")
 
 #Only execute if FixRef is executed.  Can't delete intermediates from prior step cuz they might be needed.  What about copying bim from TEMP and put it in accessory prior to deleting.
-rule restore_strand: #untested
+rule restore_strand:
     input: "{rawdata}/{rawdata}-QC.bed"
     output: "{rawdata}/{rawdata}-QC-Ref.bed"
     params:
@@ -149,6 +152,17 @@ rule restore_strand: #untested
         pre1 = "{rawdata}/tmp/{rawdata}",
         pre2 = "{rawdata}/{rawdata}"
     shell: f"{CMD_PREFIX} plink --bfile {{params.pre2}}-QC --make-bed --a2-allele {{params.bim_file}} 6 2 --out {{params.pre2}}-QC-Ref"
+
+rule set_pheno:
+    input: "{rawdata}/{rawdata}-QC-Ref.bed"
+    output: "{rawdata}/.{rawdata}-PhenoFixed"
+    run:
+        if f"{{wildcards.rawdata}}" in config['case_datasets'].strip().split(","):
+            shell("sed -i 's/-9$/2/' {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref.fam; touch {output}")
+        elif f"{{wildcards.rawdata}}" in config['control_datasets'].strip().split(","):
+            shell("sed -i 's/-9$/1/' {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref.fam; touch {output}")
+        else:
+            shell("touch {output}")
 
 rule merge_inputs:
     input: expand("{rawdata}/{rawdata}-QC-Ref.bed", rawdata=QUERY.keys())
