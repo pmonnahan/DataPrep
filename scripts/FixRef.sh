@@ -39,9 +39,9 @@ BASE=$(basename ${RawData})
 
 # BCFtools v1.8 or later and the BCFtools plugin +fixref
 # htslib v1.8 or later -- which is a BCFTools dependency
-module load bcftools/1.9
-module load htslib/1.9
-module load plink/1.90b6.10
+#module load bcftools/1.9
+#module load htslib/1.9
+#module load plink/1.90b6.10
 
 # In case I ever get singularity working
 bcftools_Exec="bcftools"

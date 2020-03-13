@@ -18,6 +18,7 @@ import pandas as pd
 import itertools
 import shutil
 from functools import reduce
+from distutils import spawn
 import multiprocessing
 
 # Define Functions
@@ -123,5 +124,8 @@ if __name__ == "__main__":
 
     if not os.path.exists(args.d):
         os.mkdir(args.d)
+
+    if args.p == "plink":
+        args.p = spawn.find_executable(args.p)
 
     wrapQC(args.i, f"{args.d}/{args.o}", args.tvm1, args.tgm, args.tvm2, args.maf, args.hwe, args.mbs, args.p)
