@@ -1,0 +1,182 @@
+---
+title: "Post-Imputation Report"
+author: Patrick Monnahan
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  pdf_document:
+    includes:
+      in_header: header.tex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_knit$set(root.dir=normalizePath('../'))
+knitr::opts_chunk$set(echo = FALSE, fig.height = 6, fig.width = 6, fig.align = 'center', fig.pos = 'H')
+```
+
+```{r dependencies, include=FALSE}
+library("ggplot2")
+library("reshape2")
+library("pheatmap")
+library("rtracklayer")
+library("GEOquery")
+library("optparse")
+library("yaml")
+library("dplyr")
+library("tidyr")
+```
+
+```{r read_params, include=FALSE}
+if(any(unlist(lapply(params, function(x) x=="NA")))) stop("Missing input params")
+counts_file <- params$counts_file
+multiqc_file <- params$multiqc_file
+rulegraph_file <- params$rulegraph_file
+SRR_IDs <- unlist(strsplit(params$SRR_IDs," "))
+GSM_IDs <- unlist(strsplit(params$GSM_IDs," "))
+
+#Include SNPs lost due to overlap.  Snps lots due to merging of filtered data.
+## Use optparse instead
+option_list <- list( 
+  make_option(c("-c", "--chrom_stats"),
+              help="text file containing filter stats...non-standard column formats due to use of wc -l"),
+  make_option(c("-o", "--output"), help="output_file"),
+  make_option(c("-y", "--yaml_file"),
+              help="config.yaml file"),
+  make_option(c("-rg", "--rule_graph"),
+              help="rule graph generated from snakemake"))
+
+opt <- parse_args(OptionParser(option_list=option_list))
+
+yaml = read_yaml(opt$y)
+chrom = read.table(opt$c)
+rulegraph_file = opt$rg
+```
+
+```{r read_data, include=FALSE}
+# Read counts:
+counts <- read.delim(counts_file, skip=1, header=F, row.names=1)
+sample_names <- t(read.delim(counts_file, nrow=1, header=F))
+colnames(counts) <- c("description",gsub(".*(SRR[0-9]*)\\..*","\\1", sample_names))
+counts_other <- counts[grep("^__",rownames(counts)),]
+rownames(counts_other) <- gsub("^__","",rownames(counts_other))
+counts <- counts[grep("^__",rownames(counts), invert=T),]
+
+# Read meta data:
+gse <- Meta(getGEO(GSM_IDs[1]))$series_id
+gse <- getGEO(gse, GSEMatrix=T)
+gse <- as.data.frame(gse[[1]])
+gsm2srr <- data.frame(geo_accession=GSM_IDs, SRR=SRR_IDs)
+meta <- merge(x=gse, y=gsm2srr, by.x="geo_accession",by.y="geo_accession")
+# Read FastQC data and update column names
+qc <- read.delim(multiqc_file)
+patterns <- c(".+percent_duplicates.*",".+percent_gc.*",
+  ".+avg_sequence_length.*", ".+percent_fails.*",".+total_sequences.*")
+subs <- c("Percent duplicates", "Percent GC", "Avg sequence length",
+  "Percent fails", "Total sequences")
+for (i in 1:length(patterns)) {
+  colnames(qc) <- gsub(patterns[i], subs[i], colnames(qc))
+}
+meta <- merge(meta, qc, by.x="SRR", by.y="Sample")
+if(any(colnames(counts)[-1] != meta$SRR)) stop("Mismatching count and meta-data")
+```
+
+# Post-Imputation Report
+
+## Preparing samples
+
+This report contains summary information of the process that was used to convert imputed data from the Michigan Imputation Server (likely using the TOPMed imputation panel) into a PLINK-formatted dataset that is ready for association analysis or admixture inference.  In brief, one or more sets of gzipped VCF files are first run through CrossMap, which converts coordinates from the GRCh38 reference genome to GRCh19.  Then, these files are converted to PLINK format and variants are filtered for missingness, duplicates, and indels (are removed).  Within each imputed dataset, variants are then merged across chromosomes, and the resulting files are merged across datasets.  Only variants that have been retained across all datasets are included in this merged dataset.  Rare alleles are then filtered from this merged dataset.  The DAG representing this workflow is provided at the end of this document, although it is likely too large to be conveniently viewed.
+
+The following datasets were used as input:
+
+```{r input-datasets}
+yaml$query %>% as.data.frame() %>% gather("Dataset", "Directory") %>% formattable()
+```
+
+and the pipeline was carried out using the following singularity image:
+```{r singularity-image}
+yaml$singularity$image
+```
+
+## Chromosome-level filters
+
+Following coordinate conversion, the VCFs for each chromosome are converted to plink format.  Variants are then filtered for missingness and duplicates and indels are removed.  The threshold for maximum proportion of missing samples for a given variant is:
+
+```{r vm2}
+yaml$QC$vm2
+```
+
+This missingness criterion is applied after first excluding samples that exceeded the following rate of missingness across variants:
+
+```{r vm2}
+yaml$QC$gm
+```
+
+The following table summarizes the number of variants excluded due to each of the filters mentioned above:
+
+```{r chrom-filter-stats}
+chrom %>% filter(!V2 %in% c("frq","hwe")) %>% pivot_wider(id_cols=c("V1","V3"),names_from="V2",values_from="V4") %>% mutate(Dataset=V1,Chromosome=V3,Missingness=lmiss,Total=txt,Duplicates=dupvar,Indels = txt - lmiss - dupvar, Raw=raw) %>% select(c(Dataset,Chromosome,Missingness,Duplicates,Indels,Total,Raw)) %>% formattable()
+```
+
+\newpage
+
+## Rule Graph
+```{r, fig.cap = "A rule graph showing the different steps of the bioinformatic analysis that is included in the Snakemake workflow.", out.height = "11cm"}
+knitr::include_graphics(normalizePath(rulegraph_file))
+```
+
+
+
+## Data processing
+
+Ye to misery wisdom plenty polite to as. Prepared interest proposal it he exercise. My wishing an in attempt ferrars. Visited eat you why service looking engaged. At place no walls hopes rooms fully in. Roof hope shy tore leaf joy paid boy. Noisier out brought entered detract because sitting sir. Fat put occasion rendered off humanity has.
+
+# Supplementary Tables and Figures
+
+```{r sample-info}
+columns <- c("SRR", "geo_accession", "source_name_ch1", "characteristics_ch1.1")
+d <- meta[,columns]
+d$characteristics_ch1.1 <- gsub("treatment: ", "", d$characteristics_ch1.1)
+knitr::kable(d, caption="Sample info",
+      col.names=c("SRR", "GEO", "Strain", "Treatment"))
+```
+
+```{r qc-stats}
+columns <- c("SRR", "Percent duplicates", "Percent GC", "Avg sequence length",
+             "Percent fails", "Total sequences")
+d <- meta[,columns]
+knitr::kable(d, caption="QC stats from FastQC")
+```
+
+```{r counts-barplot, fig.cap = "Counting statistics per sample, in terms of read counts for genes and reads not counted for various reasons."}
+d <- rbind(genes=apply(counts[,-1], 2, sum), counts_other[,-1])
+d <- melt(as.matrix(d), varnames=c("Feature","Sample"), value.name="Reads")
+ggplot(d, aes(x=Sample, y=Reads, fill=Feature)) +
+  geom_bar(stat="identity")
+```
+
+```{r gene-heatmap, fig.cap = paste("Expression (log-10 counts) of genes with at least ", max_cutoff, " counts in one sample and a CV>", cv_cutoff, ".", sep = ""), fig.height=10, out.height="22cm"}
+cv_cutoff <- 1.2
+max_cutoff <- 5
+d <- counts[apply(counts[,-1], 1, function(x) sd(x)/mean(x))>cv_cutoff &
+            apply(counts[,-1],1,max)>max_cutoff,]
+colnames(d)[2:4] <- as.character(meta$title)
+pheatmap(log10(d[,-1]+1), labels_row=paste(rownames(d)," (",substr(gsub("%2C","",d$description),1,50),")",sep=""), fontsize_row=8)
+```
+
+
+\newpage
+
+## Reproducibility
+
+The code for reproducing this analysis is available in this [Bitbucket repo](https://bitbucket.org/scilifelab-lts/reproducible_research_course/src/master/docker/). The repo contains:
+
+* A Snakemake workflow for running all analysis steps.
+* A Conda environment file for installing all needed dependencies.
+* A Docker file for running the analysis in a well-defined and isolated system.
+
+The results in this supplementary were generated in the following R environment:
+
+\footnotesize
+```{r session_info}
+sessionInfo()
+```
+\normalsize

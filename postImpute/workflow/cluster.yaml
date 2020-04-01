@@ -1,0 +1,32 @@
+#Modify lines indicated with MODIFY
+__default__:
+  queue: mangi
+  A: 'spectorl'
+  M: 'pmonnaha@umn.edu' #MODIFY
+  l: 'nodes=1:ppn=1,walltime=8:00:00,pmem=2500mb'
+  m: 'a'
+  r: 'n'
+  o: 'OandE/{rule}.{wildcards}.out'
+  e: 'OandE/{rule}.{wildcards}.err'
+
+cross_map:
+  queue: mangi
+    l: 'walltime=24:00:00,mem=8gb'
+
+convert_vcfs:
+  queue: mangi
+  l: 'walltime=24:00:00,mem=32gb'
+
+QCcombine_query:
+  queue: mangi
+  l: 'walltime=24:00:00,mem=16gb'
+
+merge_chroms:
+  queue: mangi
+  l: 'walltime=24:00:00,mem=64gb'
+
+merge_inputs:
+  queue: mangi
+  l: 'walltime=24:00:00,mem=64gb'
+
+

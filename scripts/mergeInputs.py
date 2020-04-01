@@ -29,7 +29,7 @@ def flipstrand_and_updateID(input, names_file, snps2flip, output, plink):
 
 
 def var_flt(bfile, keptVariants, output, plink):
-    cmd = f"{plink} --bfile {bfile} --extract {keptVariants} --make-bed --out {output}"
+    cmd = f"{plink} --bfile {bfile} --extract {keptVariants} --keep-allele-order --make-bed --out {output}"
     pp1 = subprocess.Popen(cmd, shell=True)  # Run cmd1
     out1, err1 = pp1.communicate()  # Wait for it to finish
     return(output)
@@ -46,13 +46,13 @@ def parallelQC(arg_list, threads, function="flipstrand_and_updateID"):
     return(outfiles)
 
 
-def merge_files(file, file_number, output, samples='all', plink='plink'):
+def merge_files(file, file_number, output, genotype_missing, samples='all', plink='plink'):
     if file_number == 1:
-        if samples == 'all': cmd = f"{plink} --bfile {file} --make-bed --allow-no-sex --keep-allele-order --out {output}"
-        else: cmd = f"{plink} --bfile {file} --keep {samples} --make-bed --allow-no-sex --out {output}"
+        if samples == 'all': cmd = f"{plink} --bfile {file} --mind {genotype_missing} --make-bed --allow-no-sex --keep-allele-order --out {output}"
+        else: cmd = f"{plink} --bfile {file} --keep {samples} --mind {genotype_missing} --keep-allele-order --make-bed --allow-no-sex --out {output}"
     else:
-        if samples == 'all': cmd = f"{plink} --merge-list {file} --make-bed --allow-no-sex --out {output}"
-        else: cmd = f"{plink} --merge-list {file} --keep {samples} --make-bed --allow-no-sex --out {output}"
+        if samples == 'all': cmd = f"{plink} --merge-list {file} --mind {genotype_missing} --keep-allele-order --make-bed --allow-no-sex --out {output}"
+        else: cmd = f"{plink} --merge-list {file} --keep {samples} --mind {genotype_missing} --keep-allele-order --make-bed --allow-no-sex --out {output}"
     print(cmd)
     pp1 = subprocess.Popen(cmd, shell=True)  # Run cmd1
     out1, err1 = pp1.communicate()  # Wait for it to finish
@@ -83,6 +83,7 @@ if __name__ == "__main__":
     parser.add_argument('-d', type=str, metavar='output_directory', required=True, help='directory to store all output')
     parser.add_argument('-p', type=str, metavar='plink_path', default="plink", help='')
     parser.add_argument('-t', type=int, metavar='threads', default=1, help='')
+    parser.add_argument('-m', type=str, metavar='genotype_missingness', default="0.1", help='')
     parser.add_argument('-s', type=str, metavar='sample_file', default='all',
                         help='File containing sample IDs to retain from merged plink files. One sample per line')
     args = parser.parse_args()
@@ -150,7 +151,7 @@ if __name__ == "__main__":
     outs = parallelQC(arg_list5, args.t, function="var_flt")
 
     # First merge attempt is likely to have strand flip errors
-    out1, err1 = merge_files(f"{args.d}/files2merge.txt", len(files), f"{args.d}/{args.o}", samples=args.s, plink=args.p)
+    out1, err1 = merge_files(f"{args.d}/files2merge.txt", len(files), f"{args.d}/{args.o}", args.m, samples=args.s, plink=args.p)
 
     # Restore Ref/Alt alleles using bim file of first dataset?
 

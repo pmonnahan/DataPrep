@@ -55,7 +55,7 @@ def calc_stats(bfile, plink):
 
     return(out1, err1)
 
-def wrapQC(input, output, tvm1, tgm, tvm2, maf, hwe, mbs, plink):
+def wrapQC(input, output, tvm1, tgm, tvm2, maf, hwe, mbs, plink, snps_only=False):
 
     out1, err1 = var_miss(input, tvm1, f"{output}.var_miss{tvm1}", plink)
     out2, err2 = geno_miss(f"{output}.var_miss{tvm1}", tgm, f"{output}.geno_miss{tgm}", plink)
@@ -65,7 +65,6 @@ def wrapQC(input, output, tvm1, tgm, tvm2, maf, hwe, mbs, plink):
     out2, err2 = calc_stats(f"{output}.geno_flt{tgm}", plink)
     DF_list = []
     flt_strings = {'frq': f"frq_MAF < {maf}", 'hwe': f"hwe_P < {hwe}", 'lmiss': f"lmiss_F_MISS > {tvm2}", 'missing': f"missing_P < {mbs}"}
-    flt_string = []
     for stat in ['frq', 'hwe', 'lmiss', 'missing']:
         try:
             tdf = pd.read_csv(f"{output}.geno_flt{tgm}.{stat}", sep = r"\s+")
@@ -80,21 +79,13 @@ def wrapQC(input, output, tvm1, tgm, tvm2, maf, hwe, mbs, plink):
         except FileNotFoundError:
             print(f"Did not find file: {output}.geno_flt{tgm}.{stat}")
     df = reduce(lambda df1, df2: pd.merge(df1, df2, on='SNP'), DF_list)
-    # ARIC is failing HWE massively.c
-    # df2 = df.query(f"frq_MAF < {maf} | hwe_P < {hwe} | lmiss_F_MISS > {tvm2} | mbs_P < {mbs}")
-    # df3 = df.query(f"frq_MAF < {maf}")
-    # df4 = df.query(f"hwe_P < {hwe}")
-    # df5 = df.query(f"lmiss_F_MISS > {tvm2}")
-    # df6 = df.query(f"mbs_P < {mbs}")
-    # df2['SNP'].to_csv(f"{output}.fltdSNPs.txt", header=False, index=False)
-    # df6.to_csv(f"{output}.fltdSNPs.mbs.txt", index=False)
-    # df3.to_csv(f"{output}.fltdSNPs.maf.txt", index=False)
-    # df4.to_csv(f"{output}.fltdSNPs.hwe.txt", index=False)
-    # df5.to_csv(f"{output}.fltdSNPs.miss.txt", index=False)
+    if snps_only:
+        awk_string = "awk '{split(\"A T C G\",tmp); for (i in tmp) arr[tmp[i]]; if(!($5 in arr) || !($6 in arr)) print $2}' >> "
+    else:
+        awk_string = "awk '{if($5 == \"N\" || $6 == \"N\") print $2}' >> "
     cmd = f"{plink} --bfile {output}.geno_flt{tgm} --list-duplicate-vars suppress-first --out {output}; tail -n +2 {output}.dupvar | cut -f 4 >> {output}.fltdSNPs.txt;"
-    cmd += f"cat {output}.geno_flt{tgm}.bim | " + "awk '{if($5 == \"N\" || $6 == \"N\") print $2}' >> " + output + ".fltdSNPs.txt; "
+    cmd += f"cat {output}.geno_flt{tgm}.bim | " + awk_string + output + ".fltdSNPs.txt; "
     cmd += f"cut -f 2 {output}.geno_flt{tgm}.bim | sort | uniq -d >> {output}.fltdSNPs.txt; {plink} --bfile {output}.geno_flt{tgm} --exclude {output}.fltdSNPs.txt --make-bed --out {output}"
-    print(cmd)
     pp1 = subprocess.Popen(cmd, shell=True)  # Run cmd1
     out1, err1 = pp1.communicate()  # Wait for it to finish
 
@@ -119,6 +110,7 @@ if __name__ == "__main__":
                         help='')
     parser.add_argument('-s', type=str, metavar='sample_file', default='all',
                         help='File containing sample IDs to retain from merged plink files. One sample per line')
+    parser.add_argument('--snps_only', action='store_true', help="output only snps; i.e. filter indels")
     args = parser.parse_args()
 
 
@@ -127,5 +119,7 @@ if __name__ == "__main__":
 
     if args.p == "plink":
         args.p = spawn.find_executable(args.p)
-
-    wrapQC(args.i, f"{args.d}/{args.o}", args.tvm1, args.tgm, args.tvm2, args.maf, args.hwe, args.mbs, args.p)
+    if args.snps_only:
+        wrapQC(args.i, f"{args.d}/{args.o}", args.tvm1, args.tgm, args.tvm2, args.maf, args.hwe, args.mbs, args.p, snps_only=True)
+    else:
+        wrapQC(args.i, f"{args.d}/{args.o}", args.tvm1, args.tgm, args.tvm2, args.maf, args.hwe, args.mbs, args.p)

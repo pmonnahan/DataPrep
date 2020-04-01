@@ -1,25 +1,27 @@
 #Modify all lines indicated with MODIFY
 samples: "all"  # This can be set to path of file containing individuals to be kept from merged query file. One sample per line.
-outname: "cclrp"
+outname: "ADMIRAL"
 local_run: 'false'
 query:
-  "cclrp": "PATH_TO_PLINK_BED_PREFIX" # MODIFY
+  "cog9906": "/home/pmonnaha/shared/impute_prep/cog9906/" # MODIFY
+  "cog9904_9905": "/home/pmonnaha/shared/impute_prep/cog9904_9905/" # MODIFY
+  "stjude": "/home/pmonnaha/shared/impute_prep/stjude/" # MODIFY
+  "aall0232": "/home/pmonnaha/shared/impute_prep/aall0232/" # MODIFY
+  "aric": "/home/pmonnaha/shared/impute_prep/aric/" # MODIFY
+case_datasets: "cog9906,cog9904_9905,stjude,aall0232"
+control_datasets: "aric"
 singularity:
-  image: 'PATH_TO_SINGULARITY_IMAGE_AncestryInference.sif' # MODIFY
+  image: '/home/pmonnaha/pmonnaha/singularity/AncestryInference.sif' # MODIFY
   module: 'module load singularity'
   code: 'scripts/'
   use_singularity: 'true'
-case_datasets: ""
-control_datasets: ""
-updates:
-  chrom_key: "scripts/PlinkChrRename.txt"
-  allele_key: "none"
-  ID_key: "none"
-  FixRef: "true"
-download_reference: 'true'
-reference:
-  refFasta: 'none'
-  refVCF: 'none'
+CrossMap:
+  exec: "/usr/local/bin/CrossMap.py"
+  chain: "/home/spectorl/pmonnaha/misc/GRCh38_to_GRCh37.flt.chain.gz"  #This file must be filtered to exclude any non-canonical chromosome names
+  fasta: "/home/spectorl/pmonnaha/misc/hg19.fa"
+  threads: "6"
+min_gp: "0.85"  # Minimum genotype probability.  Values below this are converted to missing.
+
 perform_QC: 'true'
 QC:
   vm1: "0.2"

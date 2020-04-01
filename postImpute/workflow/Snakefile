@@ -1,0 +1,173 @@
+# Load modules
+import glob
+import os
+import subprocess
+import pdb
+import shutil
+
+# Get the date
+from datetime import datetime
+i = datetime.now()
+TIME = i.strftime('%Y-%m-%d')
+
+# Specify config file
+configfile: "workflow/config.yml"
+
+# Parse config.yml file
+OUT = config['outname']
+QUERY = config['query']
+BCFTOOLS = config['bcftools']['executable']
+PYTHON = config['python']
+
+# Format commands and bind paths if using singularity.
+if config['singularity']['use_singularity'] == 'true' and config['singularity']['image'] != "none":
+    bind_paths = ",".join(set([os.path.dirname(str(x)) for x in list(QUERY.values())] + [os.path.dirname(config['CrossMap']['chain']), os.path.dirname(config['CrossMap']['fasta']), 'OandE', 'accessory', config['singularity']['code']] + list(QUERY.keys())))
+    CMD_PREFIX = f"set +u; {config['singularity']['module']}; singularity exec --bind {bind_paths},{os.getcwd()} {config['singularity']['image']}"
+    #He has to specify version of singularity...
+    CODE = config['singularity']['code']
+else:
+    CMD_PREFIX = config['cmd_prefix']
+    CODE = config['dir']['code']
+
+
+# Make subdirectories
+if not os.path.exists("accessory"): os.mkdir("accessory")
+if not os.path.exists("OandE"): os.mkdir("OandE")
+for datset in QUERY.keys():
+    if not os.path.exists(datset):
+        os.mkdir(datset)
+        os.mkdir(f"{datset}/tmp")
+
+CHROMS = config['chroms']
+if CHROMS == 'all':
+    CHROMS = [str(x) for x in range(1, 23)]
+    if config['include_x'] == 'yes': CHROMS.append('X')
+
+# Run locally or submit to cluster depending on config.yml
+if config['local_run'] == 'true':
+    localrules: all, update_alleles_IDs, FixRef, QCcombine_query
+else:
+    localrules: all, make_rulegraph
+
+# Conditionally set expected outputs of various steps depending on flags in config.yml
+def get_all_inputs(wildcards):
+    input_list = expand(f"{{rawdata}}/{{rawdata}}_raw{{chrom}}.bed", rawdata=QUERY.keys(), chrom=CHROMS)
+    input_list += expand(f"{{rawdata}}/{{rawdata}}_chr{{chrom}}-QC.bed", rawdata=QUERY.keys(), chrom=CHROMS)
+    input_list += expand(f"{{rawdata}}/{{rawdata}}_chr{{chrom}}-QC-Ref.bed", rawdata=QUERY.keys(), chrom=CHROMS)
+    if config['merge'] == 'true':
+        input_list.append(f"{OUT}.bed")
+        input_list.append(f"{OUT}-QC.bed")
+    input_list += expand(f"{{rawdata}}/.{{rawdata}}-PhenoFixed", rawdata=QUERY.keys())
+    return(input_list)
+
+def get_merge_chroms_input(wildcards):
+    input_list = expand(f"{{rawdata}}/{{rawdata}}_chr{{chrom}}-QC.bed", chrom=CHROMS)
+    return(input_list)
+
+rule all:
+    #input: get_all_inputs
+    input: f"{OUT}-QC.bed", f"{OUT}-report.pdf", f"{OUT}-rulegraph.png"
+
+rule clean:
+    input: expand("{query}",query=QUERY.keys())
+    shell: "rm -r {input}/*"
+
+rule make_rulegraph:
+    output: f"{OUT}-rulegraph.png"
+    shell: "snakemake --rulegraph --configfile workflow/config.yml | {CMD_PREFIX} dot -Tpng > {output}"
+
+rule cross_map:  # Across all datasets, two imputed variants on chromosome 9 are missing an alt/ref field.  Must filter in this step to avoid error in next.
+    output: f"{{rawdata}}/{{rawdata}}_hg19_chr{{chrom}}.vcf.gz"
+    params:
+        in_pre = lambda wildcards: QUERY[wildcards.rawdata],
+        out_pre = f"{{rawdata}}/{{rawdata}}_hg19_chr{{chrom}}.vcf",
+        awk_string = """awk \'{{if($5!=\".\") print $0}}\'"""
+    threads: int(config['CrossMap']['threads'])
+    shell: f"{CMD_PREFIX} python3 {config['CrossMap']['exec']} vcf {config['CrossMap']['chain']} {{params.in_pre}}/chr{{wildcards.chrom}}.dose.vcf.gz {config['CrossMap']['fasta']} {{params.out_pre}}; {CMD_PREFIX} {{params.awk_string}} {{params.out_pre}} | bgzip --threads {{threads}} > {{params.out_pre}}.gz; rm {{params.out_pre}}; {CMD_PREFIX} gzip {{params.out_pre}}.unmap"
+
+rule convert_vcfs:
+    input: f"{{rawdata}}/{{rawdata}}_hg19_chr{{chrom}}.vcf.gz"
+    output: f"{{rawdata}}/{{rawdata}}_raw{{chrom}}.bed"
+    shell: f"{CMD_PREFIX} plink --vcf {{input}} --const-fid 0 --keep-allele-order --vcf-min-gp {config['min_gp']} --make-bed --out {{wildcards.rawdata}}/{{wildcards.rawdata}}_raw{{wildcards.chrom}}; mv {{wildcards.rawdata}}_chr{{wildcards.chrom}}-QC.geno* {{wildcards.rawdata}}/tmp; mv {{wildcards.rawdata}}_chr{{wildcards.chrom}}-QC.var* {{wildcards.rawdata}}/tmp"
+
+rule QCcombine_query:
+    input: "{rawdata}/{rawdata}_raw{chrom}.bed"
+    output: "{rawdata}/{rawdata}_chr{chrom}-QC.bed"
+    params:
+        pre1 = "{rawdata}/{rawdata}_raw{chrom}",
+        tvm1 = config['QC']['vm1'], tgm = config['QC']['gm'], tvm2 = config['QC']['vm2'],
+        hwe = config['QC']['hwe'], maf = config['QC']['maf'], mbs = config['QC']['mbs'],
+    run:
+        if config['perform_QC'] == 'true':
+            with open("scripts/QCcombine_query.sh", 'w') as QCsh:
+                cmd = f"{CMD_PREFIX} {PYTHON} {CODE}/QC.py -i {{params.pre1}} -d {{wildcards.rawdata}} -o {{wildcards.rawdata}}_chr{{wildcards.chrom}}-QC -p plink -tvm1 {{params.tvm1}} -tgm {{params.tgm}} -tvm2 {{params.tvm2}} -hwe {{params.hwe}} -mbs {{params.mbs}} -maf -9 --snps_only"
+                if config['delete_intermediates'] == 'true': cmd += f"rm -r {{wildcards.rawdata}}/tmp/"
+            shell(cmd)
+        else:
+            shell(f"{CMD_PREFIX} plink --bfile {{params.pre1}} --make-bed --out {{params.pre1}}-QC")
+
+rule restore_strand:
+    input: "{rawdata}/{rawdata}_chr{chrom}-QC.bed"
+    output: "{rawdata}/{rawdata}_chr{chrom}-QC-Ref.bed"
+    params:
+        bim_file = "{rawdata}/{rawdata}_raw{chrom}.bim",
+        pre2 = "{rawdata}/{rawdata}_chr{chrom}"
+    shell: f"{CMD_PREFIX} plink --bfile {{params.pre2}}-QC --make-bed --a2-allele {{params.bim_file}} 6 2 --out {{params.pre2}}-QC-Ref"
+
+#When merging across chromosomes, be sure to exclude all individuals that were removed from the chromosome datasets based on missingness.
+rule merge_chroms:
+    # input: get_merge_chroms_input
+    input: expand("{{rawdata}}/{{rawdata}}_chr{chrom}-QC-Ref.bed", chrom=CHROMS)
+    output: "{rawdata}/{rawdata}-QC-Ref.bed"
+    params:
+        awk_string = "\'{{if($6>" + config['QC']['gm'] + ") print $1,$2}}\' ",
+        file_path = "{rawdata}/{rawdata}.merge"
+    run:
+        with open(params.file_path, 'w') as merge_files:
+            for chrom in CHROMS:
+                merge_files.write(f"{wildcards.rawdata}/{wildcards.rawdata}_chr{chrom}-QC-Ref\n")
+        cmd = f"{CMD_PREFIX} plink --merge-list {{wildcards.rawdata}}/{{wildcards.rawdata}}.merge --keep-allele-order --out {{wildcards.rawdata}}/{{wildcards.rawdata}}-QC-Ref"
+        shell(cmd)
+
+#TODO: If no case/control datasets, use a user-provided fam file?
+rule set_pheno:
+    input: "{rawdata}/{rawdata}-QC-Ref.bed"
+    output: "{rawdata}/.{rawdata}-PhenoFixed"
+    run:
+        if f"{{wildcards.rawdata}}" in config['case_datasets'].strip().split(","):
+            shell("{CMD_PREFIX} sed -i 's/-9$/2/' {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref.fam; touch {output}")
+        elif f"{{wildcards.rawdata}}" in config['control_datasets'].strip().split(","):
+            shell("{CMD_PREFIX} sed -i 's/-9$/1/' {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref.fam; touch {output}")
+        else:
+            shell("touch {output}")
+
+rule merge_inputs:
+    input: expand("{rawdata}/{rawdata}-QC-Ref.bed", rawdata=QUERY.keys()), expand("{rawdata}/.{rawdata}-PhenoFixed", rawdata=QUERY.keys())
+    output: f"{OUT}.bed"
+    params:
+        input_list = ",".join([f"{x}/{x}-QC" for x in QUERY.keys()])
+    run:
+        if config['merge'] == 'true':
+            shell(f"{CMD_PREFIX} {PYTHON} {CODE}/mergeInputs.py -i {{params.input_list}} -d {os.getcwd()} -o {OUT} -p plink")
+
+rule filter_merged:
+    input: f"{OUT}.bed"
+    output: f"{OUT}-QC.bed"
+    shell: f"{CMD_PREFIX} plink --bfile {OUT} --maf {config['QC']['maf']} --max-maf {1 - float(config['QC']['maf'])} --keep-allele-order --make-bed --out {OUT}-QC"
+
+#Include SNPs lost due to overlap.  Snps lost due to filtering of merged data.
+# rule make_report:
+#     input: f"{OUT}-QC.bed", f"{OUT}-rulegraph.png"
+#     output: f"{OUT}-report.pdf"
+#     params:
+#         awk_string = "wc -l */*txt | grep -v scripts | awk \'{{split($2,a,\"_\"); split(a[2],b,\".\"); split(b[1],c,\"-\"); print a[1],b[3],c[1],$1}}\' | grep -v total | cut -d \"/\" -f 2 > accessory/chromfilter.stats"
+#         awk_string += "; wc -l */*dupvar | awk \'{{split($2,a,\"_\"); split(a[2],b,\".\"); split(b[1],c,\"-\"); print a[1],b[2],c[1],$1}}\' | grep -v total | cut -d \"/\" -f 2 >> accessory/chromfilter.stats"
+#         awk_string += "; grep variants */*raw*log | grep QC | awk \'{{split($1,b,\"/\"); split(b[2],c,\"_\"); print c[1],c[2]}\' | tr \":\" \" \" | sed \'s/raw/chr/\' | sed \'s/.log/ raw/\' >> accessory/chromfilter.stats"
+#         second_cmd = f"wc -l */*-QC-Ref.bim | grep -v -e '_chr' -e total >> accessory/dataset_filter.stats; wc -l mergeSNPs.txt >> accessory/dataset_filter.stats; grep retained {OUT}-QC.log"
+#     shell: f"{CMD_PREFIX} {{params.awk_string}}; {CMD_PREFIX} Rscript scripts/postImpute_report.Rmd -c accessory/chromfilter.stats -y workflow/config.yaml -rg {OUT}-rulegraph.png"
+
+#TODO: ensure that ref/alt has been maintained in the final dataset
+
+
+
+
