@@ -11,11 +11,11 @@ __default__:
 
 cross_map:
   queue: mangi
-    l: 'walltime=24:00:00,mem=8gb'
+    l: 'walltime=48:00:00,pmem=2500mb'
 
 convert_vcfs:
   queue: mangi
-  l: 'walltime=24:00:00,mem=32gb'
+  l: 'walltime=48:00:00,pmem=2500mb'
 
 QCcombine_query:
   queue: mangi
