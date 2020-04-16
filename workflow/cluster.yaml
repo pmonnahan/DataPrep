@@ -3,7 +3,8 @@ __default__:
   queue: mangi
   A: 'spectorl'
   M: 'pmonnaha@umn.edu' #MODIFY
-  l: 'nodes=1:ppn=1,walltime=4:00:00,pmem=2500mb'
+  walltime: '04:00:00'
+  mem: '8gb'
   m: 'a'
   r: 'n'
   o: 'OandE/{rule}.{wildcards}.out'
@@ -11,11 +12,13 @@ __default__:
 
 update_alleles_IDs:
   queue: mangi
-  l: 'walltime=04:00:00,mem=32gb'
+  walltime: '04:00:00'
+  mem: '32gb'
 
 FixRef:
   queue: mangi
-  l: 'walltime=12:00:00,mem=32gb'
+  walltime: '04:00:00'
+  mem: '32gb'
 
 
 

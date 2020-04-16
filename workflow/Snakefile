@@ -64,26 +64,26 @@ else:
 
 # Conditionally set expected outputs of various steps depending on flags in config.yml
 def get_all_inputs(wildcards):
-    input_list = expand(f"{{rawdata}}/{{rawdata}}-QC.bed", rawdata=QUERY.keys())
+    input_list = [f"{OUT}-report.pdf", f"{OUT}-rulegraph.png"]
     if config['merge'] == 'true':
         input_list.append(f"{OUT}.bed")
     if config['impute_prep'] == 'true':
         input_list += expand(f"{{rawdata}}/{{rawdata}}.chr{{chrom}}.vcf.gz", rawdata=QUERY.keys(), chrom=CHROMS)
     if config['download_reference'] == 'true':
         input_list += [REFASTA, REFVCF]
-    input_list += expand(f"{{rawdata}}/.{{rawdata}}-PhenoFixed", rawdata=QUERY.keys())
     return(input_list)
 
 rule all:
-    #input: get_all_inputs
-    input: expand(f"{{rawdata}}/{{rawdata}}.chr{{chrom}}.vcf.gz", rawdata=QUERY.keys(), chrom=CHROMS), f"{OUT}-report.pdf", f"{OUT}-rulegraph.png"
+    input: get_all_inputs
+    # input: expand(f"{{rawdata}}/{{rawdata}}.chr{{chrom}}.vcf.gz", rawdata=QUERY.keys(), chrom=CHROMS), f"{OUT}-report.pdf", f"{OUT}-rulegraph.png"
 
 rule clean:
     shell: "rm RefAnnotationData/*; rm -r {wildcards.rawdata}/*"
 
 rule make_rulegraph:
     output: f"{OUT}-rulegraph.png"
-    shell: "snakemake --rulegraph --configfile workflow/config.yml | {CMD_PREFIX} dot -Tpng > {output}"
+    params: mod_cmd = CMD_PREFIX.replace(f"set +u; {config['singularity']['module']};", "")
+    shell: "snakemake --rulegraph --configfile workflow/config.yml | {params.mod_cmd} dot -Tpng > {output}"
 
 rule update_alleles_IDs: # Update chromosome labels, SNP IDs, and alleles
     output: "{rawdata}/tmp/{rawdata}_alleles_IDs.bed"

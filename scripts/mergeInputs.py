@@ -35,12 +35,21 @@ def var_flt(bfile, keptVariants, output, plink):
     return(output)
 
 
+def exclude_variants(bfile, excludedVariants, output, plink):
+    cmd = f"{plink} --bfile {bfile} --exclude {excludedVariants} --keep-allele-order --make-bed --out {output}"
+    pp1 = subprocess.Popen(cmd, shell=True)  # Run cmd1
+    out1, err1 = pp1.communicate()  # Wait for it to finish
+    return(output)
+
+
 def parallelQC(arg_list, threads, function="flipstrand_and_updateID"):
     pool = multiprocessing.Pool(threads)
     if function == "flipstrand_and_updateID":
         outfiles = pool.starmap(flipstrand_and_updateID, arg_list)
     if function == "var_flt":
         outfiles = pool.starmap(var_flt, arg_list)
+    if function == "exclude_variants":
+        outfiles = pool.starmap(exclude_variants, arg_list)
     pool.close()
     pool.join()
     return(outfiles)
@@ -77,7 +86,7 @@ def flip_scan(input, output, plink):
 
 # Set up command line execution
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='')
+    parser = argparse.ArgumentParser(description='Merge together a set of plink files.  Assumes that reference allele has been harmonized across all datasets.')
     parser.add_argument('-i', type=str, metavar='input', required=True, help='comma separated list(no spaces) with the dataset PREFIXes.  Datasets should be in plink format.  ')
     parser.add_argument('-o', type=str, metavar='output', required=True, help='output name for combined PLINK file')
     parser.add_argument('-d', type=str, metavar='output_directory', required=True, help='directory to store all output')
@@ -86,72 +95,110 @@ if __name__ == "__main__":
     parser.add_argument('-m', type=str, metavar='genotype_missingness', default="0.1", help='')
     parser.add_argument('-s', type=str, metavar='sample_file', default='all',
                         help='File containing sample IDs to retain from merged plink files. One sample per line')
+    parser.add_argument('--drop_pos_dups', action='store_true', help="remove any variants with positional duplicates. Designed to catch multiallelic variants that have been specified as multiline biallelic variants")
     args = parser.parse_args()
 
     files = args.i.split(",")
 
     indir_dict = {}
-    with open(f"{args.d}/files2merge.txt", 'w') as merge_file:
+    with open(f"{args.d}/{args.o}_files2merge.txt", 'w') as merge_file: # Do dup dropping as optional step in here and then can sub modded file into merge file spot
         for file in files:
-            merge_file.write(f"{args.d}/{file}\n")
-            indir_dict[os.path.basename(file.strip())] = os.path.dirname(file)
+            if args.drop_pos_dups:
+                df = pd.read_csv(f"{file.strip()}.bim", sep=r"\s+", header=None, dtype=str)
+                df.drop_duplicates(3, keep=False, inplace=True)
+                df[1].to_csv(f"{args.d}/{file.strip()}_unique", sep="\t", index=False, header=False)
+                var_flt(f"{args.d}/{file.strip()}", f"{args.d}/{file.strip()}_unique", f"{args.d}/{file.strip()}.unq", args.p)
+                merge_file.write(f"{args.d}/{file.strip()}.unq\n")
+                indir_dict[os.path.basename(file.strip()) + ".unq"] = os.path.dirname(file)
+            else:
+                merge_file.write(f"{args.d}/{file.strip()}\n")
+                indir_dict[os.path.basename(file.strip())] = os.path.dirname(file)
 
-    DF_dict = read_bims(f"{args.d}/files2merge.txt")
+    DF_dict = read_bims(f"{args.d}/{args.o}_files2merge.txt")
 
     # Identify merge issues before they occur.  SNPs with matching positions but different names.  Matching SNPs where strand is flipped. e.g. A-G in one is T-C in the other
     Names_dict = {}
     Flips_dict = {}
+    Pos_dict = {}  # If dropping positional duplicates, then updating variant IDs and strand is not necessary.  HOWEVER, the attempts above, to identify and remove positional duplicates resulting from multiline multiallelic variants will miss instances where the alternative allele differes across populations.  That is, the variant is biallelic within each population, but with a different alternative allele.  In these cases, we want to identify all naming conflicts and remove them.
     for i, comb in enumerate(itertools.combinations(DF_dict.keys(), r=2)):
         if i==0:  # Hold first data frame as the reference and flip needed sites in subsequent data frames with respect to constant reference
             reference = comb[0]
+        # pdb.set_trace()
         df1 = DF_dict[comb[0]]
         df2 = DF_dict[comb[1]]
-        df = pd.merge(df1, df2, on=(0,3))
-        pdb.set_trace()
+        df = pd.merge(df1, df2, on=(0, 3))  # Merging on chromosome and position
+        # pdb.set_trace()
         # TODO: need to catch when names match, alleles match, but positions do not.
-        bad_names = df[df['1_x'] != df['1_y']]
+        bad_names = df[df['1_x'] != df['1_y']]  # Check if variant IDs match
+        # Check if, for variants with matching position and non-matching names, are ALL alleles the different (indicating a flip strand).
         bad_names_flips = bad_names[(bad_names['4_x'] != bad_names['4_y']) & (bad_names['4_x'] != bad_names['5_y']) & (bad_names['5_x'] != bad_names['4_y']) & (bad_names['5_x'] != bad_names['5_y'])]
 
         df_b = pd.merge(df1, df2, on=1)
         good_names_flips = df_b[(df_b['4_x'] != df_b['4_y']) & (df_b['4_x'] != df_b['5_y']) & (df_b['5_x'] != df_b['4_y']) & (df_b['5_x'] != df_b['5_y'])]
+        good_names_all_conflicts = df_b[(df_b['4_x'] != df_b['4_y']) | (df_b['5_x'] != df_b['5_y'])]
+        # Record all name conflicts in case we want to delete all positional duplicates later
+        try:
+            Pos_dict[comb[1]] += list(bad_names['1_y'])
+            Pos_dict[comb[0]] += list(bad_names['1_x'])
+            Pos_dict[comb[1]] += list(good_names_all_conflicts[1])
+            Pos_dict[comb[0]] += list(good_names_all_conflicts[1])
+        except (KeyError, AttributeError):
+            Pos_dict[comb[1]] = list(bad_names['1_y'])
+            Pos_dict[comb[0]] = list(bad_names['1_x'])
+            Pos_dict[comb[1]] += list(good_names_all_conflicts[1])
+            Pos_dict[comb[0]] += list(good_names_all_conflicts[1])
 
         if comb[0] == reference:
             Names_dict[comb[1]] = bad_names[['1_y', '1_x']]
             flips = list(good_names_flips[1]) + list(bad_names_flips['1_x'])  # SNP ids to be flipped should be specified in terms of reference ids bc
             Flips_dict[comb[1]] = flips
 
-    # harmonize SNPids across data sets
-    with open(f"{args.d}/files2premerge.txt", 'w') as mergefile:
-        mergefile.write(f"{indir_dict[reference]}/{reference}\n")
+    # harmonize SNPids across data sets OR just exclude name conflicts (which will be multiline multiallelic variants)
+    with open(f"{args.d}/{args.o}_files2premerge.txt", 'w') as mergefile:
         arg_list4 = []
-        for name, data in Names_dict.items():
-            data[['1_y', '1_x']].to_csv(f"{args.d}/{name}_id_updates", sep="\t", index=False, header=False)
-            with open(f"{args.d}/{name}_flips", 'w') as flip_file:
-                flip_file.write('\n'.join(Flips_dict[name]))
-            arg_list4.append((f"{indir_dict[name]}/{name}", f"{args.d}/{name}_id_updates", f"{args.d}/{name}_flips", f"{args.d}/{name}.ids", args.p))
-            mergefile.write(f"{args.d}/{name}.ids\n")
+        # pdb.set_trace()
+        if not args.drop_pos_dups:
+            mergefile.write(f"{indir_dict[reference]}/{reference}\n")
+            for name, data in Names_dict.items():
 
-    outs = parallelQC(arg_list4, args.t, function="flipstrand_and_updateID")
+                data[['1_y', '1_x']].to_csv(f"{indir_dict[name]}/{name}_id_updates", sep="\t", index=False, header=False)
+                with open(f"{indir_dict[name]}/{name}_flips", 'w') as flip_file:
+                    flip_file.write('\n'.join(Flips_dict[name]))
+                arg_list4.append((f"{indir_dict[name]}/{name}", f"{indir_dict[name]}/{name}_id_updates", f"{indir_dict[name]}/{name}_flips", f"{indir_dict[name]}/{name}.ids", args.p))
+                mergefile.write(f"{indir_dict[name]}/{name}.ids\n")
+        else:
+            for name, data in Pos_dict.items():
+                if Pos_dict[name]:
+                    with open(f"{indir_dict[name]}/{name}_dup", 'w') as dup_file:
+                        dup_file.write('\n'.join(Pos_dict[name]))
+                    arg_list4.append((f"{indir_dict[name]}/{name}", f"{indir_dict[name]}/{name}_dup", f"{indir_dict[name]}/{name}.unq2", args.p))
+                    mergefile.write(f"{indir_dict[name]}/{name}.unq2\n")
+                else: mergefile.write(f"{indir_dict[name]}/{name}\n")
+
+    if args.drop_pos_dups and arg_list4:
+        outs = parallelQC(arg_list4, args.t, function="exclude_variants")
+    else:
+        outs = parallelQC(arg_list4, args.t, function="flipstrand_and_updateID")
     # pdb.set_trace()
-    DF_dict = read_bims(f"{args.d}/files2premerge.txt")
+    DF_dict = read_bims(f"{args.d}/{args.o}_files2premerge.txt")
 
     #Losing LOTS of SNPs here.
     # Poor overlap between aric and stjude/cog9906
     df = reduce(lambda df1, df2: pd.merge(df1, df2, on=1), DF_dict.values())
-    df[1].to_csv(f"{args.d}/mergeSNPs.txt", header=False, index=False)
+    df[1].to_csv(f"{args.d}/{args.o}_mergeSNPs.txt", header=False, index=False)
 
     arg_list5 = []
-    with open(f"{args.d}/files2merge.txt", 'w') as mergefile:
-        with open(f"{args.d}/files2premerge.txt", 'r') as premerge:
+    with open(f"{args.d}/{args.o}_files2merge.txt", 'w') as mergefile:
+        with open(f"{args.d}/{args.o}_files2premerge.txt", 'r') as premerge:
             for input in premerge:
                 input = input.strip()
-                arg_list5.append((input, f"{args.d}/mergeSNPs.txt", f"{input}.flt", args.p))
+                arg_list5.append((input, f"{args.d}/{args.o}_mergeSNPs.txt", f"{input}.flt", args.p))
                 mergefile.write(f"{input}.flt\n")
 
     outs = parallelQC(arg_list5, args.t, function="var_flt")
 
     # First merge attempt is likely to have strand flip errors
-    out1, err1 = merge_files(f"{args.d}/files2merge.txt", len(files), f"{args.d}/{args.o}", args.m, samples=args.s, plink=args.p)
+    out1, err1 = merge_files(f"{args.d}/{args.o}_files2merge.txt", len(files), f"{args.d}/{args.o}", args.m, samples=args.s, plink=args.p)
 
     # Restore Ref/Alt alleles using bim file of first dataset?
 
