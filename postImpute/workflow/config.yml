@@ -1,24 +1,21 @@
 #Modify all lines indicated with MODIFY
 samples: "all"  # This can be set to path of file containing individuals to be kept from merged query file. One sample per line.
-outname: "ADMIRAL"
+outname: "CCLRP"
 local_run: 'false'
 query:
-  "cog9906": "/home/pmonnaha/shared/impute_prep/cog9906/" # MODIFY
-  "cog9904_9905": "/home/pmonnaha/shared/impute_prep/cog9904_9905/" # MODIFY
-  "stjude": "/home/pmonnaha/shared/impute_prep/stjude/" # MODIFY
-  "aall0232": "/home/pmonnaha/shared/impute_prep/aall0232/" # MODIFY
-  "aric": "/home/pmonnaha/shared/impute_prep/aric/" # MODIFY
-case_datasets: "cog9906,cog9904_9905,stjude,aall0232"
-control_datasets: "aric"
+  "cclrp": "/PATH/TO/DIRECTORY/CONTAINING/IMPUTATION/OUTPUT/" # MODIFY
+case_datasets: ""
+control_datasets: ""
 singularity:
-  image: '/home/pmonnaha/pmonnaha/singularity/AncestryInference.sif' # MODIFY
+  image: '/PATH/TO/AncestryInference2.sif' # MODIFY
   module: 'module load singularity'
   code: 'scripts/'
   use_singularity: 'true'
 CrossMap:
   exec: "/usr/local/bin/CrossMap.py"
-  chain: "/home/spectorl/pmonnaha/misc/GRCh38_to_GRCh37.flt.chain.gz"  #This file must be filtered to exclude any non-canonical chromosome names
-  fasta: "/home/spectorl/pmonnaha/misc/hg19.fa"
+  download_refs: 'true'
+  chain: "ftp://ftp.ensembl.org/pub/assembly_mapping/homo_sapiens/GRCh38_to_GRCh37.chain.gz"  #This file must be filtered to exclude any non-canonical chromosome names
+  fasta: "https://hgdownload.soe.ucsc.edu/goldenPath/hg19/bigZips/hg19.fa.gz"
   threads: "6"
 min_gp: "0.85"  # Minimum genotype probability.  Values below this are converted to missing.
 
@@ -30,13 +27,12 @@ QC:
   maf: "0.01"  # mimimum Minor allele frequency
   hwe: "0.0000001"  # p-value threshold for whether site follows hardy-weinberg
   mbs: "0.0000001"  # p-value treshold for test of whether missingness varies by sex
-impute_prep: 'true'
 chroms: "all"
 include_x: "no"
 bcftools:
   executable: "bcftools"
   threads: '6'
-merge: "true"
+merge: "false"
 delete_intermediates: "false"
 cmd_prefix: "module load plink/1.90b6.10; module load htslib/1.6; module load bcftools/1.9;"
 python: 'python3.7'

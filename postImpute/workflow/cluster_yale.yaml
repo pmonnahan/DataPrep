@@ -12,22 +12,29 @@ __default__:
   e: 'OandE/{rule}.{wildcards}.err'
 
 QCcombine_query:
-  time: "4:00:00"
-  mem-per-cpu: "5G"
-  ntasks: "1"
-  nodes: "1"
-
-update_alleles_IDs:
-  time: "4:00:00"
-  mem-per-cpu: "32G"
-  ntasks: "1"
-  nodes: "1"
-
-FixRef:
   time: "12:00:00"
-  mem-per-cpu: "32G"
+  mem-per-cpu: "16G"
   ntasks: "1"
   nodes: "1"
+
+cross_map:
+  time: '24:00:00'
+  mem-per-cpu: '16G'
+  ntasks: "1"
+  nodes: "1"
+
+convert_vcfs:
+  time: '24:00:00'
+  mem-per-cpu: '32G'
+  ntasks: "1"
+  nodes: "1"
+
+merge_inputs:
+  time: '4:00:00'
+  mem-per-cpu: '32G'
+  ntasks: "1"
+  nodes: "1"
+
 
 
 

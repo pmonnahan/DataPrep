@@ -202,8 +202,18 @@ rule make_report:
             report_cmds.write("wc -l */tmp/*alleles_IDs.bim | grep -v -e total | awk \'{split($2,a,\"/\"); split(a[3],b,\".\"); split(b[1],c,\"_\"); printf(\"%s raw %s\\n\", c[1],$1)}\' >> accessory/filter.stats\n")
             report_cmds.write("grep -e NS OandE/FixRef.rawdata*err | grep -v Number | cut -d \"=\" -f 2 | awk \'{split($1,a,\".\"); print a[1],$2,$3,$4}\' | sed \'s/ref /ref-/\' | sed \'s/fixed /fixed-/\' | sed \'s/%//\' > accessory/FixRef.stats\n")
             report_cmds.write("zcat " + REFVCF +  " | vawk \'{split(I$CAF,a,\",\"); if($1==20) print $1,$2,$3,a[1]}\' | awk \'{{if(NF==4) print $0}}\' > accessory/ref_freqs.txt\n")
-            report_cmds.write("zgrep -v \"#\" */*chr20.vcf.gz | vawk \'{print $1,$2,$3, S$*$GT}\' | tr \"/\" \" \" | tr \":\" \" \" > accessory/dat_freqs.txt")
-        cmd = f"{CMD_PREFIX} sh scripts/gather_report_data.sh; {CMD_PREFIX} Rscript scripts/DataPrep_report.Rmd -f accessory/filter.stats -F accessory/FixRef.stats -r accessory/ref_freqs.txt -d accessory/dat_freqs.txt -y workflow/config.yaml -rg {OUT}-rulegraph.png -o {{output}}"
-        # shell(cmd)
+            report_cmds.write("zgrep -v \"#\" */*chr20.vcf.gz | shuf -n 100000 |  vawk \'{print $1,$2,$3, S$*$GT}\' | tr \"/\" \" \" | tr \":\" \" \" > accessory/dat_freqs.txt")
+        cmd = f"{CMD_PREFIX} sh scripts/gather_report_data.sh;"
+        cmd += """
+        echo 'rmarkdown::render("scripts/DataPrep_report.Rmd", \
+                  output_file="{output}", \
+                  params=list(flt_file="accessory/filter.stats", \
+                              FixRef_file="accessory/FixRef.stats", \
+                              rulegraph_file="{OUT}-rulegraph.png", \
+                              ref_freqs="accessory/ref_freqs.txt", \
+                              dat_freq="accessory/dat_freqs.txt", \
+                              config_file="workflow/config.yml"))' \
+        | R --vanilla
+        """
 #TODO: Test make_report
 

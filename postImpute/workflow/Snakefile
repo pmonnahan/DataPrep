@@ -74,17 +74,30 @@ rule clean:
 
 rule make_rulegraph:
     output: f"{OUT}-rulegraph.png"
-    # shell: "snakemake --rulegraph --configfile workflow/config.yml | {CMD_PREFIX} dot -Tpng > {output}"
-    shell: f"touch {{output}}"
+    params: mod_cmd = CMD_PREFIX.replace(f"set +u; {config['singularity']['module']};", "")
+    shell: "snakemake --rulegraph --configfile workflow/config.yml | {params.mod_cmd} dot -Tpng > {output}"
 
+#TODO: add option to download chain and fasta files; but recall that raw chain file must be filtered to exclude any non-canonical chromosome names
 rule cross_map:  # Across all datasets, two imputed variants on chromosome 9 are missing an alt/ref field.  Must filter in this step to avoid error in next.
     output: f"{{rawdata}}/{{rawdata}}_hg19_chr{{chrom}}.vcf.gz"
     params:
         in_pre = lambda wildcards: QUERY[wildcards.rawdata],
         out_pre = f"{{rawdata}}/{{rawdata}}_hg19_chr{{chrom}}.vcf",
-        awk_string = """awk \'{{if($5!=\".\") print $0}}\'"""
+        awk_string = """awk \'{if($5!=\".\") print $0}\'"""
     threads: int(config['CrossMap']['threads'])
-    shell: f"{CMD_PREFIX} python3 {config['CrossMap']['exec']} vcf {config['CrossMap']['chain']} {{params.in_pre}}/chr{{wildcards.chrom}}.dose.vcf.gz {config['CrossMap']['fasta']} {{params.out_pre}}; {CMD_PREFIX} {{params.awk_string}} {{params.out_pre}} | bgzip --threads {{threads}} > {{params.out_pre}}.gz; rm {{params.out_pre}}; {CMD_PREFIX} gzip {{params.out_pre}}.unmap"
+    run:
+        cmd=""
+        if config["CrossMap"]['download_refs'] == "true":
+            cmd += f"wget -P accessory/ {config['CrossMap']['fasta']}; wget -P accessory/ {config['CrossMap']['chain']} "
+            if config['CrossMap']['fasta'].endswith(".gz"): cmd += f"; gunzip accessory/{os.path.basename(config['CrossMap']['fasta'])}"
+            chrom_string = " ".join([f"{x} chr{x}" for x in range(1,23)])
+            if config['CrossMap']['fasta'].endswith(".gz"): cmd += f"; zcat {config['CrossMap']['fasta']} | "
+            else: cmd += f"; cat {config['CrossMap']['fasta']} | "
+            cmd += "awk \'BEGIN\{split(" + chrom_string + f",chroms); if($3 in chroms | $8 in chroms) print $0}}\' | gzip > accessory/{os.path.basename(config['CrossMap']['chain'])}.flt.gz; "
+            config['CrossMap']['fasta'] = f"accessory/{os.path.basename(config['CrossMap']['fasta']).strip('.gz')}"
+            config['CrossMap']['chain'] = f"accessory/{os.path.basename(config['CrossMap']['chain'])}.flt.gz"
+        cmd += f"{CMD_PREFIX} python3 {config['CrossMap']['exec']} vcf {config['CrossMap']['chain']} {{params.in_pre}}/chr{{wildcards.chrom}}.dose.vcf.gz {config['CrossMap']['fasta']} {{params.out_pre}}; {CMD_PREFIX} {{params.awk_string}} {{params.out_pre}} | bgzip --threads {{threads}} > {{params.out_pre}}.gz; rm {{params.out_pre}}; {CMD_PREFIX} gzip {{params.out_pre}}.unmap"
+        shell(cmd)
 
 rule convert_vcfs:
     input: f"{{rawdata}}/{{rawdata}}_hg19_chr{{chrom}}.vcf.gz"
@@ -141,6 +154,8 @@ rule merge_inputs:
     run:
         if config['merge'] == 'true':
             shell(f"{CMD_PREFIX} {PYTHON} {CODE}/mergeInputs.py -i {{params.input_list}} -d {os.getcwd()} -o {OUT}_chr{{wildcards.chrom}} -p plink --drop_pos_dups")
+        else:
+            shell("{CMD_PREFIX} plink --bfile {input_list} --make-bed --keep-allele-order --out {output}")
 
 rule filter_merged:
     input: f"{OUT}_chr{{chrom}}.bed"
@@ -152,13 +167,26 @@ rule make_report:
     output: f"{OUT}-report.pdf"
     run:
         with open("scripts/gather_report_data.sh", 'w') as report_cmds:
-            report_cmds.write("wc -l */*txt | grep -v -e scripts -e total | awk \'{split($2,a,\"_\"); split(a[2],b,\".\"); split(b[1],c,\"-\"); print a[1],b[3],c[1],$1}\' > accessory/chromfilter.stats\n")
-            report_cmds.write("; wc -l */*dupvar | awk \'{split($2,a,\"_\"); split(a[2],b,\".\"); split(b[1],c,\"-\"); print a[1],b[2],c[1],$1}\' | grep -v total | cut -d \"/\" -f 2 >> accessory/chromfilter.stats\n")
-            report_cmds.write("; grep variants */*raw*log | grep QC | awk \'{split($1,b,\"/\"); split(b[2],c,\"_\"); print c[1],c[2]}\' | tr \":\" \" \" | sed \'s/raw/chr/\' | sed \'s/.log/ raw/\' >> accessory/chromfilter.stats\n")
-            report_cmds.write(f"wc -l */*-QC-Ref.bim | grep -v -e '_chr' -e total >> accessory/dataset_filter.stats; wc -l mergeSNPs.txt >> accessory/dataset_filter.stats; grep retained {OUT}-QC.log >> accessory/dataset_filter.stats\n")
-        cmd = f"{CMD_PREFIX} sh scripts/gather_report_data.sh; {CMD_PREFIX} Rscript scripts/DataPrep_report.Rmd -f accessory/filter.stats -F accessory/FixRef.stats -r accessory/ref_freqs.txt -d accessory/dat_freqs.txt -y workflow/config.yaml -rg {OUT}-rulegraph.png -o {{output}}"
-        # shell(cmd)
-        shell(f"touch {OUT}-report.pdf")
+            report_cmds.write("wc -l */*fltdSNPs*txt | grep -v -e scripts -e total | awk \'{split($2,a,\"/\"); split(a[2],b,\"QC_\"); split(b[2],c,\".\"); print a[1],c[1],c[3],$1}\' > accessory/chromfilter.stats\n")
+            report_cmds.write("wc -l */*dupvar | awk \'{split($2,a,\"/\"); split(a[2],b,\"QC_\"); split(b[2],c,\".\"); print a[1],c[1],c[2],$1}\' | grep -v total >> accessory/chromfilter.stats\n")
+            report_cmds.write("grep variants */*raw*log | grep QC | awk \'{split($1,b,\"/\"); n=split(b[2],c,\"_\"); print b[1],c[n]}\' | tr \":\" \" \" | sed \'s/raw/chr/\' | sed \'s/.log/ raw/\' >> accessory/chromfilter.stats\n")
+            report_cmds.write("wc -l */*-QC-Ref_chr*.bim | awk \'{split($2,a,\"/\"); n=split(a[2],b,\"_\"); printf(\"%s\\t%s\\tpostQC\\t%s\\n\",a[1],b[n],$1)}\' | sed \'s/.bim//\' | grep -v total >> accessory/chromfilter.stats\n")
+            report_cmds.write("grep people *QC_chr*log | grep -v males | awk \'{n=split($1,a,\"_\"); print a[n]}\' | sed \'s/.log:/\\tMAF\\t/\' >> accessory/merge.stats\n")
+            if config['merge'] == 'true':
+                report_cmds.write("wc -l *mergeSNPs.txt | grep -v total | awk \'{n=split($2,b,\"_\"); printf(\"%s\\tovlp\\t%s\\n\",b[n-1],$1)}\' >> accessory/merge.stats\n")
+            else:
+                report_cmds.write(f"wc -l {OUT}_chr*.bim | awk \'{{split($2,a,\"/\"); n=split(a[2],b,\"_\"); printf(\"%s\\tovlp\\t%s\\t%s\\n\",a[1],b[n],$1)}}\' | sed \'s/.bim//\' | grep -v total >> accessory/merge.stats\n")
+        cmd = f"{CMD_PREFIX} sh scripts/gather_report_data.sh;"
+        cmd += """
+        echo 'rmarkdown::render("scripts/postImpute_report.Rmd", \
+                  output_file="{output}", \
+                  params=list(chrom_file="accessory/chromfilter.stats", \
+                              merge_file="accessory/merge.stats", \
+                              rulegraph_file="{OUT}-rulegraph.png", \
+                              config_file="workflow/config.yml"))' \
+        | R --vanilla
+        """
+        shell(cmd)
 #TODO: ensure that ref/alt has been maintained in the final dataset
 
 

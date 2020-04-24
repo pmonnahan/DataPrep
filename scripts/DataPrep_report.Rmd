@@ -7,11 +7,12 @@ output:
     includes:
       in_header: header.tex
 params:
-  counts_file: NA
-  multiqc_file: NA
+  flt_file: NA
+  FixRef_file: NA
   rulegraph_file: NA
-  SRR_IDs: NA
-  GSM_IDs: NA
+  config_file: NA
+  ref_freqs: NA
+  dat_freq: NA
 ---
 
 ```{r setup, include=FALSE}
@@ -22,81 +23,61 @@ knitr::opts_chunk$set(echo = FALSE, fig.height = 6, fig.width = 6, fig.align = '
 ```{r dependencies, include=FALSE}
 library("ggplot2")
 library("reshape2")
-library("pheatmap")
-library("rtracklayer")
-library("GEOquery")
 library("optparse")
 library("yaml")
 library("dplyr")
 library("tidyr")
+library("magrittr")
+library("formattable")
 ```
 
 ```{r read_params, include=FALSE}
 
-option_list <- list( 
-  make_option(c("-f", "--filter_stats"),
-              help="text file containing filter stats...non-standard column formats due to use of wc -l"),
-  make_option(c("-F", "--FixRef_stats"),
-              help="text file containing munged output of bcftools fixref stderr file"),
-  make_option(c("-r", "--reference_VCF_freqs"),
-              help="text file containing allele frequencies of the reference VCF"),
-  make_option(c("-d", "--query_VCF_freqs"),
-              help="text file containing genotypes of the input datasets"),
-  make_option(c("-o", "--output"), help="output_file"),
-  make_option(c("-y", "--yaml_file"),
-              help="config.yaml file"),
-  make_option(c("-rg", "--rule_graph"),
-              help="rule graph generated from snakemake"))
+# option_list <- list( 
+#   make_option(c("-f", "--filter_stats"),
+#               help="text file containing filter stats...non-standard column formats due to use of wc -l"),
+#   make_option(c("-F", "--FixRef_stats"),
+#               help="text file containing munged output of bcftools fixref stderr file"),
+#   make_option(c("-r", "--reference_VCF_freqs"),
+#               help="text file containing allele frequencies of the reference VCF"),
+#   make_option(c("-d", "--query_VCF_freqs"),
+#               help="text file containing genotypes of the input datasets"),
+#   make_option(c("-o", "--output"), help="output_file"),
+#   make_option(c("-y", "--yaml_file"),
+#               help="config.yaml file"),
+#   make_option(c("-rg", "--rule_graph"),
+#               help="rule graph generated from snakemake"))
+# 
+# opt <- parse_args(OptionParser(option_list=option_list))
+# 
+# yaml = read_yaml(opt$y)
+# flt = read.table(opt$f)
+# fix = read.table(opt$FixRef_stats)
+# ref = read.table(opt$r)
+# ref %<>% mutate(freq=as.numeric(V4))
+# dat = read.table(opt$d, na.strings=".")
+# rulegraph_file = opt$rg
 
-opt <- parse_args(OptionParser(option_list=option_list))
-
-yaml = read_yaml(opt$y)
-flt = read.table(opt$f)
-fix = read.table(opt$FixRef_stats)
-ref = read.table(opt$r)
-ref %<>% mutate(freq=as.numeric(V4))
-dat = read.table(opt$d, na.strings=".")
-rulegraph_file = opt$rg
+if(any(unlist(lapply(params, function(x) x=="NA")))) stop("Missing input params")
+flt <- read.table(params$flt_file)
+fix <- read.table(params$FixRef_file, col.names = paste0("V",seq_len(4)), fill = TRUE)
+rulegraph_file <- params$rulegraph_file
+ref <- read.table(params$ref_freqs)
+ref %<>% mutate(freq=V4,chrom=V1,pos=V2,ID=V3) %>% select(-c(V1,V2,V3,V4))
+dat <- read.table(params$dat_freq, na.strings = ".", fill=T)
+yaml <- read_yaml(params$config_file)
 ```
 
-```{r read_data, include=FALSE}
-# Read counts:
-counts <- read.delim(counts_file, skip=1, header=F, row.names=1)
-sample_names <- t(read.delim(counts_file, nrow=1, header=F))
-colnames(counts) <- c("description",gsub(".*(SRR[0-9]*)\\..*","\\1", sample_names))
-counts_other <- counts[grep("^__",rownames(counts)),]
-rownames(counts_other) <- gsub("^__","",rownames(counts_other))
-counts <- counts[grep("^__",rownames(counts), invert=T),]
-
-# Read meta data:
-gse <- Meta(getGEO(GSM_IDs[1]))$series_id
-gse <- getGEO(gse, GSEMatrix=T)
-gse <- as.data.frame(gse[[1]])
-gsm2srr <- data.frame(geo_accession=GSM_IDs, SRR=SRR_IDs)
-meta <- merge(x=gse, y=gsm2srr, by.x="geo_accession",by.y="geo_accession")
-# Read FastQC data and update column names
-qc <- read.delim(multiqc_file)
-patterns <- c(".+percent_duplicates.*",".+percent_gc.*",
-  ".+avg_sequence_length.*", ".+percent_fails.*",".+total_sequences.*")
-subs <- c("Percent duplicates", "Percent GC", "Avg sequence length",
-  "Percent fails", "Total sequences")
-for (i in 1:length(patterns)) {
-  colnames(qc) <- gsub(patterns[i], subs[i], colnames(qc))
-}
-meta <- merge(meta, qc, by.x="SRR", by.y="Sample")
-if(any(colnames(counts)[-1] != meta$SRR)) stop("Mismatching count and meta-data")
-```
-
-# Post-Imputation Report
+# Pre-Imputation Report
 
 ## Preparing samples
 
-This report contains summary information of the process that was used to convert imputed data from the Michigan Imputation Server (likely using the TOPMed imputation panel) into a PLINK-formatted dataset that is ready for association analysis or admixture inference.  In brief, one or more sets of gzipped VCF files are first run through CrossMap, which converts coordinates from the GRCh38 reference genome to GRCh19.  Then, these files are converted to PLINK format and variants are filtered for missingness, duplicates, and indels (are removed).  Within each imputed dataset, variants are then merged across chromosomes, and the resulting files are merged across datasets.  Only variants that have been retained across all datasets are included in this merged dataset.  Rare alleles are then filtered from this merged dataset.  The DAG representing this workflow is provided at the end of this document, although it is likely too large to be conveniently viewed.
+This report contains summary information of the process that was used filter and prepare different datasets for imputation via the Michigan Imputation Server (likely using the TOPMed imputation panel).  Beginning with one or more datasets in PLINK format, optional updates are made to the chromosome and variant IDs in an attempt to make these uniform across datasets.  Additionally, alleles can be converted with a provided key. Then, a series of steps are performed in an attempt to correctly set the reference versus alternative alleles as implied by a specified reference genome.  With this 'fixed' dataset, we perform a series of basic QC steps described in a subsequent section.  After QC, we restore the reference alleles determined in the previous step as well as any phenotypes or sex specification that was lost.  Finally, the datasets are split by chromosome and converted into separate sorted, gzipped VCF files.  The DAG representing this workflow is provided at the end of this document, although it is likely too large to be conveniently viewed.
 
 The following datasets were used as input:
 
 ```{r input-datasets}
-yaml$query %>% as.data.frame() %>% gather("Dataset", "Directory") %>% formattable()
+yaml$query %>% as.data.frame() %>% gather("Dataset", "Directory") %>% knitr::kable()
 ```
 
 and the pipeline was carried out using the following singularity image:
@@ -104,9 +85,49 @@ and the pipeline was carried out using the following singularity image:
 yaml$singularity$image
 ```
 
-## Chromosome-level filters
+## Reference allele fixing
 
-Following coordinate conversion, the VCFs for each chromosome are converted to plink format.  Variants are then filtered for missingness and duplicates and indels are removed.  The threshold for maximum proportion of missing samples for a given variant is:
+In contrast to a VCF, where alleles are specified with respect to a specified reference genome (reference versus alternative alleles), PLINK-formatted files often specify alleles as major/minor alleles based on the frequency in the dataset.  In an attempt to recover, the reference/altnerative specification for a particular reference genome, we use the bcftools plugin '+fixref', which requires not only the reference sequence (fasta) file, but also a VCF file containing variant sites that specify the candidates for allele fixing/swapping.  By default, the pipeline will download the following files for the hg19 reference genome
+
+Reference fasta: 
+ftp://ftp.ncbi.nlm.nih.gov/1000genomes/ftp/technical/reference/human_g1k_v37.fasta.gz
+
+Reference VCF (1000Genomes):
+ftp://ftp.ncbi.nih.gov/snp/organisms/human_9606_b150_GRCh37p13/VCF/All_20170710.vcf.gz
+
+However, it is important to realize that some (in fact, many) sites will be unable to be resolved by this method, particularly A<->T and C<->G polymorphisms.  In these cases, it is not possible to tell if such a polymorphism has simply swapped the reference versus alternative allele OR if the polymorphism has been specified relative to the opposite strand of the reference genome.
+
+Below is a summary of this procedure:
+
+This figure provides the summary of the different possible states as determined by bcftools +fixref:
+```{r FixRef-StateSummary, warning=FALSE, message=FALSE}
+fix %<>% distinct() %>% group_by(V1,V2) %>% summarize(max_sites = max(V3), percent = max(V4,na.rm=T), min_sites = min(V3)) %>% mutate(Dataset=V1)
+
+fix %>% mutate(sites = case_when(V2=="ref-match" ~ min_sites, V2!="ref-match" ~ max_sites), State=V2) %>% filter(State %in% c("total","ref-match","ref-mismatch","non-ACGT","non-SNP","non-biallelic")) %>% ggplot(aes(x=Dataset, fill = State, y = sites/1000)) + geom_bar(stat="identity",position=position_dodge()) + ylab("Sites (in thousands)")
+```
+The 'ref-mismatch' sites are the ones in which the program will try to take action to correct.
+
+The number of sites in which the corresponding action was taken:
+```{r FixRef-ActionTaken, warning=FALSE, message=FALSE}
+fix %>% mutate(sites = max_sites, Action=V2) %>% filter(Action %in% c("skipped","swapped","flipped","flip+swap","fixed-pos","unresolved")) %>% ggplot(aes(x=Dataset, fill = Action, y = sites/1000)) + geom_bar(stat="identity",position=position_dodge()) + ylab("Sites (in thousands)")
+```
+My understanding is that 'swapped' indicates that the REF/ALT allele is simply swapped in the query dataset, whereas 'flipped' indicates that the strand was flipped.  With the exception of the 'unresolved' class, these 'corrected' sites will be included in the new totals shown below.  The 'unresolved' sites are essentially lost data and are filtered from the final datasets.
+
+The new total number of sites following the changes made by bcftools +fixref:
+```{r FixRef-NewTotals, warning=FALSE, message=FALSE}
+fix %>% filter(V2=="ref-match") %>% ggplot(aes(x=1, fill=Dataset, y=min_sites/1000)) + geom_bar(stat="identity",position=position_dodge()) + ylab("Sites (in thousands)") + theme(axis.title.x = element_blank(), axis.text.x = element_blank(), axis.ticks.x = element_blank())
+```
+
+An indication of whether the above procedure worked correctly is to plot frequency of an allele in the query population against the frequency in the reference population and look for an obviously positive correlation.  The graphs below provide such plots for each of the query datasets:
+```{r AF-correlation, warning=FALSE, message=FALSE}
+
+dat = dat %>% gather(hap,allele,-c(V1,V2,V3,V4,V5)) %>% group_by(V1,V2,V3,V4,V5) %>% summarize(freq = sum(allele,na.rm=T)/n())
+dat %<>% mutate(chrom=V3,pos=V4,ID=V5)
+dat %>% left_join(ref, by=c("chrom","pos","ID")) %>% ggplot(aes(x=freq.x,y=as.numeric(freq.y))) + geom_point() + facet_grid(~V1) + ylab("Reference AF") + xlab("Query AF")
+
+```
+
+
 
 ```{r vm2}
 yaml$QC$vm2
@@ -114,22 +135,26 @@ yaml$QC$vm2
 
 This missingness criterion is applied after first excluding samples that exceeded the following rate of missingness across variants:
 
-```{r vm2}
+```{r gm}
 yaml$QC$gm
 ```
 
 The following table summarizes the number of variants excluded due to each of the filters mentioned above:
 
-```{r chrom-filter-stats}
-chrom %>% filter(!V2 %in% c("frq","hwe")) %>% pivot_wider(id_cols=c("V1","V3"),names_from="V2",values_from="V4") %>% mutate(Dataset=V1,Chromosome=V3,Missingness=lmiss,Total=txt,Duplicates=dupvar,Indels = txt - lmiss - dupvar, Raw=raw) %>% select(c(Dataset,Chromosome,Missingness,Duplicates,Indels,Total,Raw)) %>% formattable()
+```{r chrom-filter-stats, warning=FALSE, message=FALSE}
+flt %<>% pivot_wider(id_cols=c("V1"),names_from="V2",values_from="V3") %>% mutate(Dataset=V1,Missingness=lmiss,MAF=frq,HWE=hwe,Total=txt,Duplicates=txt - frq - hwe - lmiss, Raw=raw) %>% select(c(Dataset,Missingness,HWE,MAF,Duplicates,Total,Raw)) 
+
+# print table
+flt %>% knitr::kable()
+
+# sites filtered for each filter as proportion of total filtered sites
+flt %>% mutate(Missingness = Missingness/Total, HWE = HWE/Total, MAF = MAF/Total, Duplicates = Duplicates/Total) %>% select(-c(Total,Raw)) %>% pivot_longer(-Dataset,names_to = "Filter", values_to = "Proportion") %>% ggplot(aes(x=Dataset,fill=Filter,y=Proportion)) + geom_bar(position=position_dodge(), stat="identity")
+
+# Total sites filtered as proportion of raw number of sites
+flt %>% select(Dataset, Total,Raw) %>% mutate(Filtered = Total/Raw) %>% select(-c(Total,Raw)) %>% ggplot(aes(x = 1, y=Filtered,fill=Dataset)) + geom_bar(stat = "identity", position=position_dodge()) + theme(axis.title.x = element_blank(), axis.text.x = element_blank(), axis.ticks.x = element_blank()) + ylab("Proportion of sites filtered")
+
 ```
 
-```{r AF-correlation}
-mich.f %>% left_join(ref, by=c("V1","V2","V3")) %>% ggplot(aes(x=freq.x,y=as.numeric(freq.y))) + geom_point() + ylab("Reference AF") + xlab("Query AF")
-max(mich.f$freq,na.rm=T)
-mich.f = mich %>% gather(hap,allele,-c(V1,V2,V3)) %>% group_by(V1,V2,V3) %>% summarize(freq = sum(allele)/n())
-mich = read.table("~/Documents/Research/ewings/data/mich_chr20_fixref.txt", na.strings = ".")
-```
 
 
 \newpage
@@ -139,55 +164,16 @@ mich = read.table("~/Documents/Research/ewings/data/mich_chr20_fixref.txt", na.s
 knitr::include_graphics(normalizePath(rulegraph_file))
 ```
 
-
-
-## Data processing
-
-Ye to misery wisdom plenty polite to as. Prepared interest proposal it he exercise. My wishing an in attempt ferrars. Visited eat you why service looking engaged. At place no walls hopes rooms fully in. Roof hope shy tore leaf joy paid boy. Noisier out brought entered detract because sitting sir. Fat put occasion rendered off humanity has.
-
-# Supplementary Tables and Figures
-
-```{r sample-info}
-columns <- c("SRR", "geo_accession", "source_name_ch1", "characteristics_ch1.1")
-d <- meta[,columns]
-d$characteristics_ch1.1 <- gsub("treatment: ", "", d$characteristics_ch1.1)
-knitr::kable(d, caption="Sample info",
-      col.names=c("SRR", "GEO", "Strain", "Treatment"))
-```
-
-```{r qc-stats}
-columns <- c("SRR", "Percent duplicates", "Percent GC", "Avg sequence length",
-             "Percent fails", "Total sequences")
-d <- meta[,columns]
-knitr::kable(d, caption="QC stats from FastQC")
-```
-
-```{r counts-barplot, fig.cap = "Counting statistics per sample, in terms of read counts for genes and reads not counted for various reasons."}
-d <- rbind(genes=apply(counts[,-1], 2, sum), counts_other[,-1])
-d <- melt(as.matrix(d), varnames=c("Feature","Sample"), value.name="Reads")
-ggplot(d, aes(x=Sample, y=Reads, fill=Feature)) +
-  geom_bar(stat="identity")
-```
-
-```{r gene-heatmap, fig.cap = paste("Expression (log-10 counts) of genes with at least ", max_cutoff, " counts in one sample and a CV>", cv_cutoff, ".", sep = ""), fig.height=10, out.height="22cm"}
-cv_cutoff <- 1.2
-max_cutoff <- 5
-d <- counts[apply(counts[,-1], 1, function(x) sd(x)/mean(x))>cv_cutoff &
-            apply(counts[,-1],1,max)>max_cutoff,]
-colnames(d)[2:4] <- as.character(meta$title)
-pheatmap(log10(d[,-1]+1), labels_row=paste(rownames(d)," (",substr(gsub("%2C","",d$description),1,50),")",sep=""), fontsize_row=8)
-```
-
-
 \newpage
 
 ## Reproducibility
 
-The code for reproducing this analysis is available in this [Bitbucket repo](https://bitbucket.org/scilifelab-lts/reproducible_research_course/src/master/docker/). The repo contains:
+The code for reproducing this analysis is available in this [Github repo](https://github.com/pmonnahan/DataPrep). The repo contains:
 
-* A Snakemake workflow for running all analysis steps.
-* A Conda environment file for installing all needed dependencies.
-* A Docker file for running the analysis in a well-defined and isolated system.
+* A Snakemake workflow for running all steps.
+* A collection of scripts to acheive individual steps
+* A Singularity definitions file that can be used to generate the Singularity image used to run all steps.
+** This image file is also directly available upon request
 
 The results in this supplementary were generated in the following R environment:
 

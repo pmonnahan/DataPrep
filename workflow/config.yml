@@ -5,7 +5,7 @@ local_run: 'false'
 query:
   "cclrp": "PATH_TO_PLINK_BED_PREFIX" # MODIFY
 singularity:
-  image: 'PATH_TO_SINGULARITY_IMAGE_AncestryInference.sif' # MODIFY
+  image: 'PATH_TO_SIgrep NGULARITY_IMAGE_AncestryInference.sif' # MODIFY
   module: 'module load singularity'
   code: 'scripts/'
   use_singularity: 'true'
