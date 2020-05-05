@@ -11,7 +11,7 @@ i = datetime.now()
 TIME = i.strftime('%Y-%m-%d')
 
 # Specify config file
-configfile: "workflow/config2.yml"
+configfile: "workflow/config.yml"
 
 # Parse config.yml file
 OUT = config['outname']
@@ -75,10 +75,11 @@ rule clean:
 rule make_rulegraph:
     output: f"{OUT}-rulegraph.png"
     params: mod_cmd = CMD_PREFIX.replace(f"set +u; {config['singularity']['module']};", "")
-    shell: "snakemake --rulegraph --configfile workflow/config.yml | {params.mod_cmd} dot -Tpng > {output}"
+    # shell: f"{config['singularity']['module']}; snakemake --rulegraph --configfile workflow/config.yml | {{params.mod_cmd}} dot -Tpng > {{output}}"
+    shell: "touch {OUT}-rulegraph.png"
 
 #TODO: add option to download chain and fasta files; but recall that raw chain file must be filtered to exclude any non-canonical chromosome names
-rule cross_map:  # Across all datasets, two imputed variants on chromosome 9 are missing an alt/ref field.  Must filter in this step to avoid error in next.
+rule cross_map:  #TODO Across all datasets, two imputed variants on chromosome 9 are missing an alt/ref field.  Must filter in this step to avoid error in next.  Still not working
     output: f"{{rawdata}}/{{rawdata}}_hg19_chr{{chrom}}.vcf.gz"
     params:
         in_pre = lambda wildcards: QUERY[wildcards.rawdata],
@@ -139,9 +140,9 @@ rule set_pheno:
     input: "{rawdata}/{rawdata}-QC-Ref-varIDs_chr{chrom}.bed"
     output: "{rawdata}/.{rawdata}-PhenoFixed_chr{chrom}"
     run:
-        if f"{{wildcards.rawdata}}" in config['case_datasets'].strip().split(","):
+        if f"{wildcards.rawdata}" in config['case_datasets'].strip().split(","):
             shell("{CMD_PREFIX} sed -i 's/-9$/2/' {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}.fam; touch {output}")
-        elif f"{{wildcards.rawdata}}" in config['control_datasets'].strip().split(","):
+        elif f"{wildcards.rawdata}" in config['control_datasets'].strip().split(","):
             shell("{CMD_PREFIX} sed -i 's/-9$/1/' {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}.fam; touch {output}")
         else:
             shell("touch {output}")
@@ -162,31 +163,47 @@ rule filter_merged:
     output: f"{OUT}-QC_chr{{chrom}}.bed"
     shell: f"{CMD_PREFIX} plink --bfile {OUT}_chr{{wildcards.chrom}} --maf {config['QC']['maf']} --keep-allele-order --make-bed --out {OUT}-QC_chr{{wildcards.chrom}}"
 
+#TODO extract chunks and samples excluded from input directory
+#TODO extract number of variants that were unmapped during CrossMap
 rule make_report:
     input: expand(f"{OUT}-QC_chr{{chrom}}.bed", chrom=CHROMS), f"{OUT}-rulegraph.png"
     output: f"{OUT}-report.pdf"
     run:
+        with open("accessory/chunks_excluded.txt", 'w') as exc_file:
+            exc_file.write(f"dataset\tchunk\tnum.snps\tref.ovlp\tnum.low.sample.callrate\n")
+            for dataset,directory in QUERY.items():
+                with open(f"{directory}/chunks-excluded.txt") as dat_chunks:
+                    for line in dat_chunks:
+                        if not line.startswith("#"): exc_file.write(f"{dataset}\t" + line)
+                        if not line.endswith("\n"): exc_file.write(f"\n")
+        with open("accessory/snps_excluded.txt", 'w') as exc_file:
+            exc_file.write(f"dataset\tsite\tfilter\tinfo\n")
+            for dataset,directory in QUERY.items():
+                with open(f"{directory}/snps-excluded.txt") as dat_chunks:
+                    for line in dat_chunks:
+                        if not line.startswith("#"): exc_file.write(f"{dataset}\t" + line.replace(" ", "-"))
+                        if not line.endswith("\n"): exc_file.write(f"\n")
         with open("scripts/gather_report_data.sh", 'w') as report_cmds:
             report_cmds.write("wc -l */*fltdSNPs*txt | grep -v -e scripts -e total | awk \'{split($2,a,\"/\"); split(a[2],b,\"QC_\"); split(b[2],c,\".\"); print a[1],c[1],c[3],$1}\' > accessory/chromfilter.stats\n")
             report_cmds.write("wc -l */*dupvar | awk \'{split($2,a,\"/\"); split(a[2],b,\"QC_\"); split(b[2],c,\".\"); print a[1],c[1],c[2],$1}\' | grep -v total >> accessory/chromfilter.stats\n")
+            report_cmds.write("for f in */*unmap.gz; do printf \"${f}\\t\"; zcat $f | wc -l ; done | awk \'{split($1,a,\"/\"); n=split(a[2],b,\"_\"); split(b[n],c,\".\"); print a[1],c[1],c[3],$2}\' >> accessory/chromfilter.stats\n")
             report_cmds.write("grep variants */*raw*log | grep QC | awk \'{split($1,b,\"/\"); n=split(b[2],c,\"_\"); print b[1],c[n]}\' | tr \":\" \" \" | sed \'s/raw/chr/\' | sed \'s/.log/ raw/\' >> accessory/chromfilter.stats\n")
             report_cmds.write("wc -l */*-QC-Ref_chr*.bim | awk \'{split($2,a,\"/\"); n=split(a[2],b,\"_\"); printf(\"%s\\t%s\\tpostQC\\t%s\\n\",a[1],b[n],$1)}\' | sed \'s/.bim//\' | grep -v total >> accessory/chromfilter.stats\n")
-            report_cmds.write("grep people *QC_chr*log | grep -v males | awk \'{n=split($1,a,\"_\"); print a[n]}\' | sed \'s/.log:/\\tMAF\\t/\' >> accessory/merge.stats\n")
+            report_cmds.write("grep people *QC_chr*log | grep -v males | awk \'{n=split($1,a,\"_\"); print a[n]}\' | sed \'s/.log:/\\tMAF\\t/\' > accessory/merge.stats\n")
             if config['merge'] == 'true':
                 report_cmds.write("wc -l *mergeSNPs.txt | grep -v total | awk \'{n=split($2,b,\"_\"); printf(\"%s\\tovlp\\t%s\\n\",b[n-1],$1)}\' >> accessory/merge.stats\n")
             else:
                 report_cmds.write(f"wc -l {OUT}_chr*.bim | awk \'{{split($2,a,\"/\"); n=split(a[2],b,\"_\"); printf(\"%s\\tovlp\\t%s\\t%s\\n\",a[1],b[n],$1)}}\' | sed \'s/.bim//\' | grep -v total >> accessory/merge.stats\n")
-        cmd = f"{CMD_PREFIX} sh scripts/gather_report_data.sh;"
-        cmd += """
-        echo 'rmarkdown::render("scripts/postImpute_report.Rmd", \
-                  output_file="{output}", \
-                  params=list(chrom_file="accessory/chromfilter.stats", \
-                              merge_file="accessory/merge.stats", \
-                              rulegraph_file="{OUT}-rulegraph.png", \
-                              config_file="workflow/config.yml"))' \
-        | R --vanilla
-        """
-        shell(cmd)
+            report_line = f"echo \'rmarkdown::render(\"scripts/postImpute_report.Rmd\", output_file=..\"{OUT}-report.pdf\", " \
+                          f"params=list(chrom_file=\"accessory/chromfilter.stats\", " \
+                          f"merge_file=\"accessory/merge.stats\", chunk_file=\"accessory/chunks_excluded.txt\", " \
+                          f"snp_file=\"accessory/snps_excluded.txt\", " \
+                          f"rulegraph_file=\"{OUT}-rulegraph.png\", " \
+                          f"config_file=\"workflow/config.yml\"))\' | R --vanilla"
+            report_cmds.write(report_line)
+
+        shell(f"{CMD_PREFIX} sh scripts/gather_report_data.sh; mv scripts/{OUT}-report.pdf {OUT}-report.pdf")
+
 #TODO: ensure that ref/alt has been maintained in the final dataset
 
 

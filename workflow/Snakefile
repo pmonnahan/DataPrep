@@ -215,5 +215,6 @@ rule make_report:
                               config_file="workflow/config.yml"))' \
         | R --vanilla
         """
+        shell(cmd)
 #TODO: Test make_report
 
