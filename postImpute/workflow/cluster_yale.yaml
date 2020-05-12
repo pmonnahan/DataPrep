@@ -18,13 +18,13 @@ QCcombine_query:
   nodes: "1"
 
 cross_map:
-  time: '24:00:00'
+  time: '48:00:00'
   mem-per-cpu: '16G'
   ntasks: "1"
   nodes: "1"
 
 convert_vcfs:
-  time: '24:00:00'
+  time: '48:00:00'
   mem-per-cpu: '32G'
   ntasks: "1"
   nodes: "1"

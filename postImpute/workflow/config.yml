@@ -4,8 +4,11 @@ outname: "CCLRP"
 local_run: 'false'
 query:
   "cclrp": "/PATH/TO/DIRECTORY/CONTAINING/IMPUTATION/OUTPUT/" # MODIFY
-case_datasets: ""
-control_datasets: ""
+phenotype_data: # Must specify a phenotype file where first column is sample ID (must match those in imputed VCFs) and phenotype is second column OR list query datasets by case/control (comma-separated, no spaces)
+  pheno_file: "none" #MODIFY
+  sex_file: "none" #MODIFY
+  case_datasets: "" # e.g. cog1,cog2
+  control_datasets: "" # e.g. aric,phg663
 singularity:
   image: '/PATH/TO/AncestryInference2.sif' # MODIFY
   module: 'module load singularity'

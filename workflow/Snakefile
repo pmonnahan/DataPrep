@@ -33,7 +33,7 @@ if config['updates']['FixRef'] == "true":
 
 # Format commands and bind paths if using singularity.
 if config['singularity']['use_singularity'] == 'true' and config['singularity']['image'] != "none":
-    bind_paths = ",".join(set([os.path.dirname(str(x)) for x in list(QUERY.values())] + [os.path.dirname(REFASTA), os.path.dirname(REFVCF), os.path.dirname(config['updates']['chrom_key']), 'OandE', 'accessory', config['singularity']['code']] + list(QUERY.keys())))
+    bind_paths = ",".join(set([os.path.dirname(str(x)) for x in list(QUERY.values())] + [os.path.dirname(REFASTA), os.path.dirname(REFVCF), os.path.dirname(config['updates']['chrom_key']), os.path.dirname(config['updates']['allele_key']), os.path.dirname(config['updates']['ID_key']), 'OandE', 'accessory', config['singularity']['code']] + list(QUERY.keys())))
     CMD_PREFIX = f"set +u; {config['singularity']['module']}; singularity exec --bind {bind_paths},{os.getcwd()} {config['singularity']['image']}"
     #He has to specify version of singularity...
     CODE = config['singularity']['code']
@@ -100,17 +100,17 @@ rule update_alleles_IDs: # Update chromosome labels, SNP IDs, and alleles
             if config['updates']['allele_key'] != "none":
                 if config['updates']['chrom_key'] != "none":
                     shell(f"{CMD_PREFIX} sed -i 's/_/-/g' {{params.in_pre}}.fam;"
-                          f"{CMD_PREFIX} {{params.exec}} --bfile {{params.in_pre}} --keep-allele-order --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom; "
-                          f"{CMD_PREFIX} {{params.exec}} --bfile {{params.prefix}}.chrom --keep-allele-order --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles; "
-                          f"{CMD_PREFIX} {{params.exec}} --bfile {{params.prefix}}_alleles --keep-allele-order --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
+                          f"{{params.exec}} --bfile {{params.in_pre}} --keep-allele-order --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom; "
+                          f"{{params.exec}} --bfile {{params.prefix}}.chrom --keep-allele-order --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles; "
+                          f"{{params.exec}} --bfile {{params.prefix}}_alleles --keep-allele-order --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
                 else:
                     shell(f"{CMD_PREFIX} sed -i 's/_/-/g' {{params.in_pre}}.fam; "
-                          f"{CMD_PREFIX} {{params.exec}} --bfile {{params.in_pre}} --keep-allele-order --exclude {{params.prefix}}.dups --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles; "
-                          f"{CMD_PREFIX} {{params.exec}} --bfile {{params.prefix}}_alleles --keep-allele-order --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
+                          f"{{params.exec}} --bfile {{params.in_pre}} --keep-allele-order --exclude {{params.prefix}}.dups --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles; "
+                          f"{{params.exec}} --bfile {{params.prefix}}_alleles --keep-allele-order --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
             elif config['updates']['chrom_key'] != "none":
                 shell(f"{CMD_PREFIX} sed -i 's/_/-/g' {{params.in_pre}}.fam; "
-                      f"{CMD_PREFIX} {{params.exec}} --bfile {{params.in_pre}} --keep-allele-order --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom; "
-                      f"{CMD_PREFIX} {{params.exec}} --bfile {{params.prefix}}.chrom --keep-allele-order --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
+                      f"{{params.exec}} --bfile {{params.in_pre}} --keep-allele-order --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom; "
+                      f"{{params.exec}} --bfile {{params.prefix}}.chrom --keep-allele-order --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")
             else:
                 shell(f"{CMD_PREFIX} sed -i 's/_/-/g' {{params.in_pre}}.fam; "
                       f"{CMD_PREFIX} {{params.exec}} --bfile {{params.in_pre}} --keep-allele-order --exclude {{params.prefix}}.dups --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs")

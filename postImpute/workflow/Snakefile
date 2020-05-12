@@ -19,6 +19,8 @@ QUERY = config['query']
 BCFTOOLS = config['bcftools']['executable']
 PYTHON = config['python']
 
+
+#TODO: Add check that the scripts directory is findable
 # Format commands and bind paths if using singularity.
 if config['singularity']['use_singularity'] == 'true' and config['singularity']['image'] != "none":
     bind_paths = ",".join(set([os.path.dirname(str(x)) for x in list(QUERY.values())] + [os.path.dirname(config['CrossMap']['chain']), os.path.dirname(config['CrossMap']['fasta']), 'OandE', 'accessory', config['singularity']['code']] + list(QUERY.keys())))
@@ -75,8 +77,8 @@ rule clean:
 rule make_rulegraph:
     output: f"{OUT}-rulegraph.png"
     params: mod_cmd = CMD_PREFIX.replace(f"set +u; {config['singularity']['module']};", "")
-    # shell: f"{config['singularity']['module']}; snakemake --rulegraph --configfile workflow/config.yml | {{params.mod_cmd}} dot -Tpng > {{output}}"
-    shell: "touch {OUT}-rulegraph.png"
+    shell: f"{config['singularity']['module']}; snakemake --rulegraph --configfile workflow/config.yml | {{params.mod_cmd}} dot -Tpng > {{output}}"
+    # shell: "touch {OUT}-rulegraph.png"
 
 #TODO: add option to download chain and fasta files; but recall that raw chain file must be filtered to exclude any non-canonical chromosome names
 rule cross_map:  #TODO Across all datasets, two imputed variants on chromosome 9 are missing an alt/ref field.  Must filter in this step to avoid error in next.  Still not working
@@ -94,10 +96,11 @@ rule cross_map:  #TODO Across all datasets, two imputed variants on chromosome 9
             chrom_string = " ".join([f"{x} chr{x}" for x in range(1,23)])
             if config['CrossMap']['fasta'].endswith(".gz"): cmd += f"; zcat {config['CrossMap']['fasta']} | "
             else: cmd += f"; cat {config['CrossMap']['fasta']} | "
-            cmd += "awk \'BEGIN\{split(" + chrom_string + f",chroms); if($3 in chroms | $8 in chroms) print $0}}\' | gzip > accessory/{os.path.basename(config['CrossMap']['chain'])}.flt.gz; "
+            cmd += f"awk \'BEGIN{{split(" + chrom_string + f",chroms); if($3 in chroms | $8 in chroms) print $0}}\' | gzip > accessory/{os.path.basename(config['CrossMap']['chain'])}.flt.gz; "
             config['CrossMap']['fasta'] = f"accessory/{os.path.basename(config['CrossMap']['fasta']).strip('.gz')}"
             config['CrossMap']['chain'] = f"accessory/{os.path.basename(config['CrossMap']['chain'])}.flt.gz"
         cmd += f"{CMD_PREFIX} python3 {config['CrossMap']['exec']} vcf {config['CrossMap']['chain']} {{params.in_pre}}/chr{{wildcards.chrom}}.dose.vcf.gz {config['CrossMap']['fasta']} {{params.out_pre}}; {CMD_PREFIX} {{params.awk_string}} {{params.out_pre}} | bgzip --threads {{threads}} > {{params.out_pre}}.gz; rm {{params.out_pre}}; {CMD_PREFIX} gzip {{params.out_pre}}.unmap"
+        print(cmd)
         shell(cmd)
 
 rule convert_vcfs:
@@ -128,24 +131,38 @@ rule restore_strand:
         bim_file = "{rawdata}/{rawdata}_raw{chrom}.bim"
     shell: f"{CMD_PREFIX} plink --bfile {{wildcards.rawdata}}/{{wildcards.rawdata}}-QC_chr{{wildcards.chrom}} --make-bed --a2-allele {{params.bim_file}} 6 2 --out {{wildcards.rawdata}}/{{wildcards.rawdata}}-QC-Ref_chr{{wildcards.chrom}}"
 
-# Not tested
-rule update_varIDs:
+# Not tested since adding sex
+rule update_varIDs_and_sex:
     input: "{rawdata}/{rawdata}-QC-Ref_chr{chrom}.bed"
     output: "{rawdata}/{rawdata}-QC-Ref-varIDs_chr{chrom}.bed"
-    shell: """{CMD_PREFIX} awk '{{printf("%s\\t%s:%s\\n",$2,$1,$4)}}' {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}.bim > {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}_varIDs.txt; {CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom} --update-name {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}_varIDs.txt --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs_chr{wildcards.chrom}"""
+    params: sex_dat = config['phenotype_data']['sex_file']
+    shell: """
+    sed \'s/^/0\t/\' {params.sex_dat} > accessory/sex.txt;
+    {CMD_PREFIX} awk '{{printf("%s\\t%s:%s\\n",$2,$1,$4)}}' {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}.bim > {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}_varIDs.txt; 
+    {CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom} --update-name {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}_varIDs.txt --update-sex accessory/sex.txt --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs_chr{wildcards.chrom}
+    """
 
 #TODO: If no case/control datasets, use a user-provided fam file?
 #TODO: set_pheno is not working correctly
 rule set_pheno:
     input: "{rawdata}/{rawdata}-QC-Ref-varIDs_chr{chrom}.bed"
     output: "{rawdata}/.{rawdata}-PhenoFixed_chr{chrom}"
+    params: pheno_dat = config['phenotype_data']['pheno_file']
     run:
-        if f"{wildcards.rawdata}" in config['case_datasets'].strip().split(","):
-            shell("{CMD_PREFIX} sed -i 's/-9$/2/' {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}.fam; touch {output}")
-        elif f"{wildcards.rawdata}" in config['control_datasets'].strip().split(","):
-            shell("{CMD_PREFIX} sed -i 's/-9$/1/' {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}.fam; touch {output}")
+        if os.path.exists(params.pheno_dat):
+            shell("sed \'s/^/0\t/\' {params.pheno_dat} > accessory/pheno_file.txt; "
+                  "{CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs_chr{wildcards.chrom} --pheno accessory/pheno_file.txt --keep-allele-order --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs-pheno_chr{wildcards.chrom};"
+                  "mv {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs-pheno_chr{wildcards.chrom}.bed {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs_chr{wildcards.chrom}.bed"
+                  "mv {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs-pheno_chr{wildcards.chrom}.bim {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs_chr{wildcards.chrom}.bim"
+                  "mv {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs-pheno_chr{wildcards.chrom}.fam {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs_chr{wildcards.chrom}.fam"
+                  "touch {output}")
+        elif f"{wildcards.rawdata}" in config['phenotype_data']['case_datasets'].strip().split(","):
+            shell("{CMD_PREFIX} sed -i 's/-9$/2/' {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs_chr{wildcards.chrom}.fam; touch {output}")
+        elif f"{wildcards.rawdata}" in config['phenotype_data']['control_datasets'].strip().split(","):
+            shell("{CMD_PREFIX} sed -i 's/-9$/1/' {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs_chr{wildcards.chrom}.fam; touch {output}")
         else:
             shell("touch {output}")
+
 
 rule merge_inputs:
     input: expand("{rawdata}/{rawdata}-QC-Ref-varIDs_chr{{chrom}}.bed", rawdata=QUERY.keys()), expand("{rawdata}/.{rawdata}-PhenoFixed_chr{{chrom}}", rawdata=QUERY.keys())
@@ -194,7 +211,7 @@ rule make_report:
                 report_cmds.write("wc -l *mergeSNPs.txt | grep -v total | awk \'{n=split($2,b,\"_\"); printf(\"%s\\tovlp\\t%s\\n\",b[n-1],$1)}\' >> accessory/merge.stats\n")
             else:
                 report_cmds.write(f"wc -l {OUT}_chr*.bim | awk \'{{split($2,a,\"/\"); n=split(a[2],b,\"_\"); printf(\"%s\\tovlp\\t%s\\t%s\\n\",a[1],b[n],$1)}}\' | sed \'s/.bim//\' | grep -v total >> accessory/merge.stats\n")
-            report_line = f"echo \'rmarkdown::render(\"scripts/postImpute_report.Rmd\", output_file=..\"{OUT}-report.pdf\", " \
+            report_line = f"echo \'rmarkdown::render(\"scripts/postImpute_report.Rmd\", output_file=\"{OUT}-report.pdf\", " \
                           f"params=list(chrom_file=\"accessory/chromfilter.stats\", " \
                           f"merge_file=\"accessory/merge.stats\", chunk_file=\"accessory/chunks_excluded.txt\", " \
                           f"snp_file=\"accessory/snps_excluded.txt\", " \
