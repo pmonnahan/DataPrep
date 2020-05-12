@@ -15,6 +15,8 @@ updates:
   chrom_key: "scripts/PlinkChrRename.txt"
   allele_key: "none"
   ID_key: "none"
+#  allele_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/recodePlinkAlleles.txt"
+#  ID_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/recodePlinkMarkers_noDups.txt"
   FixRef: "true"
 download_reference: 'true'
 reference:

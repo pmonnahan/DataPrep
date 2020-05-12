@@ -1,0 +1,467 @@
+\PassOptionsToPackage{unicode=true}{hyperref} % options for packages loaded elsewhere
+\PassOptionsToPackage{hyphens}{url}
+%
+\documentclass[]{article}
+\usepackage{lmodern}
+\usepackage{amssymb,amsmath}
+\usepackage{ifxetex,ifluatex}
+\usepackage{fixltx2e} % provides \textsubscript
+\ifnum 0\ifxetex 1\fi\ifluatex 1\fi=0 % if pdftex
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provides euro and other symbols
+\else % if luatex or xelatex
+  \usepackage{unicode-math}
+  \defaultfontfeatures{Ligatures=TeX,Scale=MatchLowercase}
+\fi
+% use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+% use microtype if available
+\IfFileExists{microtype.sty}{%
+\usepackage[]{microtype}
+\UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\IfFileExists{parskip.sty}{%
+\usepackage{parskip}
+}{% else
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt plus 2pt minus 1pt}
+}
+\usepackage{hyperref}
+\hypersetup{
+            pdftitle={Post-Imputation Report},
+            pdfauthor={Patrick Monnahan},
+            pdfborder={0 0 0},
+            breaklinks=true}
+\urlstyle{same}  % don't use monospace font for urls
+\usepackage[margin=1in]{geometry}
+\usepackage{longtable,booktabs}
+% Fix footnotes in tables (requires footnote package)
+\IfFileExists{footnote.sty}{\usepackage{footnote}\makesavenoteenv{longtable}}{}
+\usepackage{graphicx,grffile}
+\makeatletter
+\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+\def\maxheight{\ifdim\Gin@nat@height>\textheight\textheight\else\Gin@nat@height\fi}
+\makeatother
+% Scale images if necessary, so that they will not overflow the page
+% margins by default, and it is still possible to overwrite the defaults
+% using explicit options in \includegraphics[width, height, ...]{}
+\setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
+\setlength{\emergencystretch}{3em}  % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{0}
+% Redefines (sub)paragraphs to behave more like sections
+\ifx\paragraph\undefined\else
+\let\oldparagraph\paragraph
+\renewcommand{\paragraph}[1]{\oldparagraph{#1}\mbox{}}
+\fi
+\ifx\subparagraph\undefined\else
+\let\oldsubparagraph\subparagraph
+\renewcommand{\subparagraph}[1]{\oldsubparagraph{#1}\mbox{}}
+\fi
+
+% set default figure placement to htbp
+\makeatletter
+\def\fps@figure{htbp}
+\makeatother
+
+\usepackage{float}
+\usepackage{caption}
+\usepackage{color}
+\usepackage{lscape}
+\newcommand{\blandscape}{\begin{landscape}}
+\newcommand{\elandscape}{\end{landscape}}
+\captionsetup[figure]{name=Figure, labelfont=bf}
+\renewcommand{\thefigure}{S\arabic{figure}}
+
+\captionsetup[table]{name=Table, labelfont=bf}
+\renewcommand{\thetable}{S\arabic{table}}
+
+\title{Post-Imputation Report}
+\author{Patrick Monnahan}
+\date{27 April, 2020}
+
+\begin{document}
+\maketitle
+
+This report contains summary information of the process that was used to
+convert imputed data from the
+\href{https://imputation.biodatacatalyst.nhlbi.nih.gov/#!}{{\color{blue}{\underline{TOPMed Imputation Server}}}}
+into a PLINK-formatted dataset that is ready for association analysis or
+admixture inference. In brief, one or more sets of gzipped VCF files are
+first run through CrossMap, which converts coordinates from the GRCh38
+reference genome to GRCh19. Then, these files are converted to PLINK
+format and variants are filtered for missingness, duplicates, and indels
+(are removed). For each chromosome, we then merge these resulting files
+across datasets. Only variants that have been retained across all
+datasets are included in this merged dataset. Rare alleles are then
+filtered from this merged dataset. The DAG representing this workflow is
+provided at the end of this document, although it may be difficult to
+view. Also, see the config.yml in the workflow directory for full list
+of parameter inputs and settings.
+
+The following datasets were used as input:
+
+\begin{longtable}[]{@{}ll@{}}
+\toprule
+Dataset & Directory\tabularnewline
+\midrule
+\endhead
+cog9906 & /home/pmonnaha/shared/impute\_prep/cog9906/\tabularnewline
+cog9904\_9905 &
+/home/pmonnaha/shared/impute\_prep/cog9904\_9905/\tabularnewline
+stjude & /home/pmonnaha/shared/impute\_prep/stjude/\tabularnewline
+aall0232 & /home/pmonnaha/shared/impute\_prep/aall0232/\tabularnewline
+aric & /home/pmonnaha/shared/impute\_prep/aric/\tabularnewline
+\bottomrule
+\end{longtable}
+
+and the pipeline was carried out using the following singularity image:
+
+\begin{verbatim}
+## [1] "/home/pmonnaha/pmonnaha/AncestryInference.sif"
+\end{verbatim}
+
+\hypertarget{imputation-summary}{%
+\section{Imputation Summary}\label{imputation-summary}}
+
+The TOPMed Imputation Server is based on the Michigan Imputation Server
+technology and thus implements a series of filters on the input datasets
+(see
+\href{https://imputationserver.sph.umich.edu/index.html#!pages/pipeline}{{\color{blue}{\underline{here}}}}
+for details) prior to imputation.
+
+\hypertarget{input-filtering}{%
+\subsection{Input Filtering}\label{input-filtering}}
+
+\hypertarget{variant-exclusion}{%
+\subsubsection{Variant Exclusion}\label{variant-exclusion}}
+
+For each variant, the server will attempt to convert coordinates to hg38
+(if necessary) via the LiftOver tool. If this is successful, it will
+determine if the variant matches a variant in the reference dataset
+along with whether the alleles in the query dataset match those in the
+reference. If a mismatch is found, the type of mismatch (flip, swap, or
+flip+swap) is determined and the variant is removed. The plot below
+summarizes the number of variants that were excluded subdivided by
+reason for exclusion. Note that these unstandardized totals will likely
+depend heavily on the total number of variants in the input query
+dataset.
+
+\begin{center}\includegraphics{test_postImpute_files/figure-latex/excluded-snps-1} \end{center}
+
+\hypertarget{chunk-exclusion}{%
+\subsubsection{Chunk Exclusion}\label{chunk-exclusion}}
+
+The chromosomes are then divided into 20Mb chunks, and these chunks are
+excluded from imputation if: 1.) there are fewer than 3 SNPs, 2.) if
+\textless{}50\% of sites in query dataset are found in reference
+dataset, 3.) any samples has a callrate \textless{}50\%.
+
+Below is the full list of excluded chunks along with the number of
+datasets that they were excluded from and the reasons for exclusion.
+
+\begin{longtable}[]{@{}lrrrr@{}}
+\toprule
+chunk & Low.SNP.Number & Low.Ref.Overlap & Bad.Sample &
+Num.DataSets\tabularnewline
+\midrule
+\endhead
+chunk\_14\_0000000001\_0020000000 & 0 & 3 & 0 & 3\tabularnewline
+chunk\_15\_0000000001\_0020000000 & 2 & 0 & 2 & 4\tabularnewline
+chunk\_9\_0040000001\_0060000000 & 5 & 3 & 0 & 5\tabularnewline
+\bottomrule
+\end{longtable}
+
+Experience has shown that there should only be a few excluded chunks,
+which tend to be relatively consistent across datasets (e.g.~chromosome
+9 and 14)
+
+Number of excluded chunks in each dataset, further classified by the
+reason for which they were filtered. Note that a single chunk may have
+failed multiple filters.
+
+\begin{longtable}[]{@{}lrrrr@{}}
+\toprule
+dataset & Low.SNP.Number & Low.Ref.Overlap & Bad.Sample &
+Total\tabularnewline
+\midrule
+\endhead
+aall0232 & 1 & 2 & 0 & 2\tabularnewline
+aric & 1 & 1 & 1 & 2\tabularnewline
+cog9904\_9905 & 1 & 2 & 1 & 3\tabularnewline
+cog9906 & 2 & 1 & 0 & 3\tabularnewline
+stjude & 2 & 0 & 0 & 2\tabularnewline
+\bottomrule
+\end{longtable}
+
+\newpage
+
+The plot below shows the number of imputed variants after excluding the
+SNPs and chunks listed above. If few chunks were excluded, then these
+numbers should be very consistent across datasets. Note that numbers are
+slightly artificially inflated due to the coding of multiallelic
+variants. These are represented on multiple lines, one for each
+alternative allele. These multiallelic variants as well as the indels
+are removed, subsequently, and generally make up a small portion (5-6\%)
+of the total number. Also, note that the majority of these imputed
+variants are likely fixed for one allele and will ultimately be removed
+(see `Removing rare alleles' below)
+
+\begin{figure}[H]
+
+{\centering \includegraphics{test_postImpute_files/figure-latex/chrom-total-imputed-1} 
+
+}
+
+\caption{Total number of imputed variants (SNPs and Indels)}\label{fig:chrom-total-imputed}
+\end{figure}
+
+\newpage
+
+\hypertarget{coordinate-conversion}{%
+\section{Coordinate Conversion}\label{coordinate-conversion}}
+
+The program
+\href{http://crossmap.sourceforge.net/}{{\color{blue}{\underline{CrossMap}}}}
+was used to convert coordinates from GRCh38 to GRCh19. The reference
+fasta and `chain' files (key linking coordinates across chromosomes)
+were taken from:
+
+Reference Fasta
+
+\begin{verbatim}
+## [1] "/home/spectorl/pmonnaha/misc/hg19.fa"
+\end{verbatim}
+
+Chain File
+
+\begin{verbatim}
+## [1] "/home/spectorl/pmonnaha/misc/GRCh38_to_GRCh37.flt.chain.gz"
+\end{verbatim}
+
+\begin{figure}[H]
+
+{\centering \includegraphics{test_postImpute_files/figure-latex/crossmap-unmapped-1} 
+
+}
+
+\caption{Proportion of variants whose coordinates were not successfully cross-mapped}\label{fig:crossmap-unmapped}
+\end{figure}
+
+The proportion here is calculated for each chromosome as: \#unmapped /
+(\#mapped + \#unmapped). Unmapped variants were removed from subsequent
+steps. \newpage
+
+\hypertarget{plink-conversion-and-initial-qc}{%
+\section{PLINK Conversion and initial
+QC}\label{plink-conversion-and-initial-qc}}
+
+Following coordinate conversion, the VCFs for each chromosome are
+converted to plink format. During this conversion, poorly imputed
+genotypes are filtered out. That is, if the probability of the most
+probable genotype falls below the following threshold, then the genotype
+for this sample is set to missing.
+
+\begin{verbatim}
+## [1] "0.85"
+\end{verbatim}
+
+Thus, the missingness filter discussed below also filters for imputation
+`quality'.
+
+Variants are then filtered for missingness and duplicates and indels are
+removed. The threshold for maximum proportion of missing samples for a
+given variant is:
+
+\begin{verbatim}
+## [1] "0.05"
+\end{verbatim}
+
+This missingness criterion is applied after first excluding samples that
+exceeded the following rate of missingness across variants:
+
+\begin{verbatim}
+## [1] "0.1"
+\end{verbatim}
+
+\begin{figure}[H]
+
+{\centering \includegraphics{test_postImpute_files/figure-latex/chrom-filter-stats-1} 
+
+}
+
+\caption{Proportion of total imputed sites removed by each filter.}\label{fig:chrom-filter-stats}
+\end{figure}
+
+Note: Indels includes multiallelic variants as well, which are the vast
+minority.
+
+\newpage
+
+\hypertarget{filtering-merged-data}{%
+\section{Filtering Merged Data}\label{filtering-merged-data}}
+
+\hypertarget{overlap-filtering}{%
+\subsection{Overlap filtering}\label{overlap-filtering}}
+
+If multiple imputed datasets were provided as input, the next step would
+be, for each chromosome, to merge the genotypes across datasets.
+Importantly, only variants that are still present in all datasets
+(i.e.~have not been filtered in any single dataset) will be retained.
+This way, if a variant imputed poorly in one dataset for whatever
+reason, it would be removed entirely from the merged dataset.
+
+\begin{figure}[H]
+
+{\centering \includegraphics{test_postImpute_files/figure-latex/merge-stats-1} 
+
+}
+
+\caption{Proportion of variants found in all component datasets for each chromosome}\label{fig:merge-stats}
+\end{figure}
+
+\newpage
+
+\hypertarget{removing-rare-alleles}{%
+\subsection{Removing rare alleles}\label{removing-rare-alleles}}
+
+Removal of rare alleles is the final and likely most consequential step
+in the post-imputation QC pipeline. We wait to filter rare alleles until
+after merging in case there are fixed differences across datasets. Such
+variants, although rare in each individual dataset, may be intermediate
+in the merged dataset. The reason that this filter will likely remove
+the largest number of variants is due to the fact that the majority of
+imputed variants are, in fact, non-variant. The
+
+\begin{figure}[H]
+
+{\centering \includegraphics{test_postImpute_files/figure-latex/maf-stats-1} 
+
+}
+
+\caption{Proportion of variants that were RETAINED following removal of rare SNPs}\label{fig:maf-stats1}
+\end{figure}
+\begin{figure}[H]
+
+{\centering \includegraphics{test_postImpute_files/figure-latex/maf-stats-2} 
+
+}
+
+\caption{Total number of imputed variants remaining in the final QC'ed dataset.}\label{fig:maf-stats2}
+\end{figure}
+\newpage
+
+\hypertarget{rule-graph}{%
+\section{Rule Graph}\label{rule-graph}}
+
+Below is a directed acyclic graph depicting the steps involved in this
+post-imputation QC pipeline. When possible, computation within each node
+was parallelized by dataset, chromosome, etc. The full DAG visualizing
+the parallel computing can be generated via:
+
+\begin{verbatim}
+snakemake --dag | dot -Tpng > jobgraph.png
+\end{verbatim}
+
+from within the directory that the post-imputation QC was carried out.
+These are typically too large to fit easily in a pdf, and so were not
+included in this report.
+
+\begin{figure}[H]
+
+{\centering \includegraphics[width=5.38in,height=11cm]{/Users/pmonnaha/Documents/Research/DataPrep/data/ewingsOG-rulegraph} 
+
+}
+
+\caption{A rule graph showing the different steps of the bioinformatic analysis that is included in the Snakemake workflow.}\label{fig:unnamed-chunk-1}
+\end{figure}
+
+\newpage
+
+\hypertarget{reproducibility}{%
+\section{Reproducibility}\label{reproducibility}}
+
+The code for reproducing this analysis is available
+\href{https://github.com/pmonnahan/DataPrep/tree/master/postImpute/workflow}{{\color{blue}{\underline{here}}}}.
+The repo contains:
+
+\begin{itemize}
+\tightlist
+\item
+  A Snakemake workflow for running all steps.
+\item
+  A collection of scripts to acheive individual steps
+\item
+  A Singularity definitions file that can be used to generate the
+  Singularity image used to run all steps. ** This image file is also
+  directly available upon request
+\end{itemize}
+
+The code for reproducing this report is available
+\href{https://github.com/pmonnahan/DataPrep/blob/master/scripts/postImpute_report.Rmd}{{\color{blue}{\underline{here}}}}.
+
+The input files for the figures produced herein are from:
+
+\begin{verbatim}
+## $chrom_file
+## [1] "data/chromfilter.stats"
+## 
+## $merge_file
+## [1] "data/merge.stats"
+## 
+## $chunk_file
+## [1] "data/chunks_excluded.txt"
+## 
+## $snp_file
+## [1] "data/snps_excluded.txt"
+## 
+## $rulegraph_file
+## [1] "data/ewingsOG-rulegraph.png"
+## 
+## $config_file
+## [1] "data/config.yml"
+\end{verbatim}
+
+Also, see the config.yml in the workflow directory for full list of
+parameter inputs and settings.
+
+The results in this supplementary were generated in the following R
+environment:
+
+\footnotesize
+
+\begin{verbatim}
+## R version 3.6.1 (2019-07-05)
+## Platform: x86_64-apple-darwin18.6.0 (64-bit)
+## Running under: macOS Mojave 10.14.6
+## 
+## Matrix products: default
+## BLAS/LAPACK: /usr/local/Cellar/openblas/0.3.7/lib/libopenblasp-r0.3.7.dylib
+## 
+## locale:
+## [1] en_US/en_US.UTF-8/en_US/C/en_US/en_US
+## 
+## attached base packages:
+## [1] stats     graphics  grDevices utils     datasets  methods   base     
+## 
+## other attached packages:
+## [1] magrittr_1.5   stringr_1.4.0  tidyr_1.0.2    dplyr_0.8.5    yaml_2.2.1    
+## [6] optparse_1.6.4 reshape2_1.4.3 ggplot2_3.3.0 
+## 
+## loaded via a namespace (and not attached):
+##  [1] Rcpp_1.0.3        highr_0.8         pillar_1.4.3      compiler_3.6.1   
+##  [5] plyr_1.8.6        tools_3.6.1       digest_0.6.25     viridisLite_0.3.0
+##  [9] evaluate_0.14     lifecycle_0.2.0   tibble_2.1.3      gtable_0.3.0     
+## [13] png_0.1-7         pkgconfig_2.0.3   rlang_0.4.5       xfun_0.12        
+## [17] withr_2.1.2       knitr_1.28        vctrs_0.2.4       grid_3.6.1       
+## [21] tidyselect_1.0.0  getopt_1.20.3     glue_1.3.1        R6_2.4.1         
+## [25] rmarkdown_2.1     farver_2.0.3      purrr_0.3.3       scales_1.1.0     
+## [29] htmltools_0.4.0   ellipsis_0.3.0    assertthat_0.2.1  colorspace_1.4-1 
+## [33] labeling_0.3      stringi_1.4.6     munsell_0.5.0     crayon_1.3.4
+\end{verbatim}
+
+\normalsize
+
+\end{document}
