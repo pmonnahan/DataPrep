@@ -73,6 +73,11 @@ def get_all_inputs(wildcards):
         input_list += [REFASTA, REFVCF]
     return(input_list)
 
+# def get_FixRef_inputs(wildcards):
+#     for dat in QUERY.keys():
+#
+
+
 rule all:
     input: get_all_inputs
     # input: expand(f"{{rawdata}}/{{rawdata}}.chr{{chrom}}.vcf.gz", rawdata=QUERY.keys(), chrom=CHROMS), f"{OUT}-report.pdf", f"{OUT}-rulegraph.png"
@@ -129,6 +134,10 @@ rule update_alleles_IDs: # Update chromosome labels, SNP IDs, and alleles
             else:
                 shell(f"sed -i 's/_/-/g' {{params.in_pre}}.fam; {{params.exec}} --keep-allele-order --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --make-bed --out {{params.prefix}}_alleles_IDs")
 
+#TODO: Break above step apart into the different update steps
+#Modify config structure, so that update keys can be passed for each dataset
+
+#TODO: Add step that flips strand here
 
 rule download_Refs:  # Download hg19 and the 1000Genomes VCF for use in strand flipping of query data
     output: REFVCF, REFASTA
@@ -142,6 +151,7 @@ rule FixRef:  # Use bcftools +fixref to set reference vs alternate alleles
         chr_key = config['updates']['chrom_key']
     run:
         if config['updates']['FixRef'] == "true":
+            if REFFASTA.endswith()
             shell(f"{CMD_PREFIX} bash {CODE}/FixRef.sh {{wildcards.rawdata}}_alleles_IDs {{wildcards.rawdata}}/tmp/ {{wildcards.rawdata}}-FixRef {{params.chr_key}} {REFASTA} {REFVCF} t t t t")
         else:
             shell(f"{CMD_PREFIX} plink --bfile {{params.prefix}}_alleles_IDs --keep-allele-order --make-bed --out {{params.prefix}}-FixRef")
