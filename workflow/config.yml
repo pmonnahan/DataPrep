@@ -1,32 +1,50 @@
 #Modify all lines indicated with MODIFY
 samples: "all"  # This can be set to path of file containing individuals to be kept from merged query file. One sample per line.
-outname: "cclrp"
+outname: "ALL"
 local_run: 'false'
 query:
-  "cclrp": "PATH_TO_PLINK_BED_PREFIX" # MODIFY
-#    path: "PATH_TO_PLINK_BED_PREFIX" # MODIFY
-#    chrom_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/scripts/PlinkChrRename.txt"
-#    allele_key: "none"
-#    ID_key: "none"
-#    flip_key: "none"
+  "cog1":
+    data: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.genotype-calls-matrixfmt.c1.HMB/with_fam/cog9904_9905_snp6_with_fam"
+    chrom_key: "/home/pmonnaha/pmonnaha/misc/PlinkChrRename.txt"
+    allele_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/recodePlinkAlleles.txt"
+    ID_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/recodePlinkMarkers_noDups.txt"
+    flip_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/opposite_strands_ssIDs.txt"
+  "cog2":
+    data: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.genotype-calls-matrixfmt.c1.HMB/with_fam/cog9906_500K_with_fam"
+    chrom_key: "/home/pmonnaha/pmonnaha/misc/PlinkChrRename.txt"
+    allele_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/recodePlinkAlleles.txt"
+    ID_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/recodePlinkMarkers_noDups.txt"
+    flip_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/opposite_strands_ssIDs.txt"
+  "stjude":
+    data: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.genotype-calls-matrixfmt.c1.HMB/with_fam/stjude_500K_with_fam"
+    chrom_key: "/home/pmonnaha/pmonnaha/misc/PlinkChrRename.txt"
+    allele_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/recodePlinkAlleles.txt"
+    ID_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/recodePlinkMarkers_noDups.txt"
+    flip_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/opposite_strands_ssIDs.txt"
+  "aall0232":
+    data: "/home/pmonnaha/shared/data/admiral/aall0232/plink"
+    chrom_key: "/home/pmonnaha/pmonnaha/misc/PlinkChrRename.txt"
+    allele_key: "none"
+    ID_key: "none"
+    flip_key: "none"
+  "aric":
+    data: "/home/pmonnaha/shared/data/admiral/mergeALL_AA/QC_allRaces/aric"
+    chrom_key: "/home/pmonnaha/pmonnaha/misc/PlinkChrRename.txt"
+    allele_key: "none"
+    ID_key: "none"
+    flip_key: "none"
 singularity:
-  image: 'PATH_TO_SINGULARITY_IMAGE_AncestryInference.sif' # MODIFY
+  image: '/home/pmonnaha/pmonnaha/singularity/AncestryInference.sif' # MODIFY
   module: 'module load singularity'
   code: 'scripts/'
   use_singularity: 'true'
-case_datasets: ""
-control_datasets: ""
-updates:
-  chrom_key: "scripts/PlinkChrRename.txt"
-  allele_key: "none"
-  ID_key: "none"
-#  allele_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/recodePlinkAlleles.txt"
-#  ID_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/recodePlinkMarkers_noDups.txt"
-  FixRef: "true"
-download_reference: 'true'
+case_datasets: "aall0232,cog1,cog2,stjude"
+control_datasets: "aric"
+FixRef: 'true'
+download_reference: 'false'
 reference:
-  refFasta: 'none'
-  refVCF: 'none'
+  refFasta: '/home/pmonnaha/pmonnaha/ALL_DataPrep/RefAnnotationData/human_g1k_v37.fasta.gz'
+  refVCF: '/home/pmonnaha/pmonnaha/ALL_DataPrep/RefAnnotationData/All_20170710.vcf.gz'
 perform_QC: 'true'
 QC:
   vm1: "0.2"

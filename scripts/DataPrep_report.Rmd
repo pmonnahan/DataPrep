@@ -30,6 +30,7 @@ library("magrittr")
 library("wrapr")
 library("stringr")
 library("foreach")
+library("pander")
 ```
 
 ```{r read_params, include=FALSE}
@@ -45,12 +46,12 @@ dat_files = str_split(params$dat_freq, ",")
 yaml <- read_yaml(params$config_file)
 ```
 
-This report contains summary information of the process that was used filter and prepare different datasets for imputation via the Michigan Imputation Server (likely using the TOPMed imputation panel).  Beginning with one or more datasets in PLINK format, optional updates are made to the chromosome and variant IDs in an attempt to make these uniform across datasets.  Additionally, alleles can be converted with a provided key. Then, a series of steps are performed in an attempt to correctly set the reference versus alternative alleles as implied by a specified reference genome.  With this 'fixed' dataset, we perform a series of basic QC steps described in a subsequent section.  After QC, we restore the reference alleles determined in the previous step as well as any phenotypes or sex specification that was lost.  Finally, the datasets are split by chromosome and converted into separate sorted, gzipped VCF files.  The DAG representing this workflow is provided at the end of this document, although it is likely too large to be conveniently viewed.
+This report contains summary information of the process that was used to filter and prepare different datasets for imputation via the Michigan Imputation Server (likely using the TOPMed imputation panel).  Beginning with one or more datasets in PLINK format, optional updates are made to the chromosome and variant IDs in an attempt to make these uniform across datasets.  Additionally, alleles can be converted with a provided key. Then, a series of steps are performed in an attempt to correctly set the reference versus alternative alleles as implied by a specified reference genome.  With this 'fixed' dataset, we perform a series of basic QC steps described in a subsequent section.  After QC, we restore the reference alleles determined in the previous step as well as any phenotypes or sex specification that was lost.  Finally, the datasets are split by chromosome and converted into separate sorted, gzipped VCF files.  The DAG representing this workflow is provided at the end of this document, although it is likely too large to be conveniently viewed.
 
 The following datasets were used as input:
 
 ```{r input-datasets}
-yaml$query %>% as.data.frame() %.>% pivot_longer(., colnames(.), names_to = "Dataset", values_to = "Directory") %>% knitr::kable()
+yaml$query %>% as.data.frame() %.>% pivot_longer(., colnames(.), names_to = "Names", values_to = "Directory") %>% separate(Names,into = c("Dataset", "key"), "[.]") %>% filter(key=="data") %>% select(-key) %.>% pander::pander(., split.cell = 80, split.table = Inf)
 ```
 
 and the pipeline was carried out using the following singularity image:
@@ -87,15 +88,14 @@ fix %>% mutate(sites = max_sites, Action=V2) %>% filter(Action %in% c("skipped",
 Since bcftools does not do any flipping, anything in the 'flipped' and 'flip+swap' will be removed.  With the exception of the 'unresolved' class (which includes the flipped and flip+swap variants), these 'corrected' sites will be included in the new totals shown below.  The 'unresolved' sites are essentially lost data and are filtered from the final datasets.
 
 ```{r FixRef-NewTotals, fig.cap="New total number of sites following the changes made by bcftools +fixref", warning=FALSE, message=FALSE}
-fix %>% filter(V2=="ref-match") %>% ggplot(aes(x=1, fill=Dataset, y=max_sites/1000)) + geom_bar(stat="identity",position=position_dodge()) + ylab("Sites (in thousands)") + theme(axis.title.x = element_blank(), axis.text.x = element_blank(), axis.ticks.x = element_blank())
+fix %>% filter(V2=="total") %>% ggplot(aes(x=1, fill=Dataset, y=min_sites/1000)) + geom_bar(stat="identity",position=position_dodge()) + ylab("Sites (in thousands)") + theme(axis.title.x = element_blank(), axis.text.x = element_blank(), axis.ticks.x = element_blank())
 ```
 Ideally, there should be >400k remaining SNPs after this point.  Lower SNP density (<300k total sites) has been associated with poor imputation outcomes.  
 
 An indication of whether alleles are now specified correctly is to plot frequency of an allele in the query population against the frequency in the reference population and look for an obviously positive correlation.  The graphs below provide such plots for each of the query datasets:
-```{r AF-correlation, fig.cap="Scatter plots showing correlation between reference allele frequency as measured in the reference VCF and query data", warning=TRUE, message=TRUE}
+```{r AF-correlation, fig.cap="Scatter plots showing correlation between reference allele frequency as measured in the reference VCF and query data", warning=FALSE, message=FALSE}
 
 Dat = foreach(i = 1:length(dat_files[[1]]), .combine=rbind) %do% {
-  print(dat_files[[1]][i])
   dat = read.table(dat_files[[1]][i], na.strings=".", fill = T)
   # We do 1 - freq below, so that we get REF frequency as reported in ref_freqs.txt
   dat = dat %>% pivot_longer(-c(V1,V2,V3), names_to="hap",values_to="allele") %>% group_by(V1,V2,V3) %>% summarize(freq = 1 - sum(allele,na.rm=T)/n(), datset=str_split(basename(dat_files[[1]][i]),"[.]")[[1]][1], dd = basename(dat_files[[1]][i]))
@@ -142,19 +142,24 @@ yaml$QC$hwe
 
 as well as any duplicate variants.
 
+The table below lists the number of variants excluded for each filter, while the proceeding figure presents the same information but shown as a proportion of the total of all filtered sites.  Note that it is possible for a variant to get flagged by multiple filters, such that the sum of the values from individual filters will not equal the total filtered.
 
 ```{r chrom-filter-stats, fig.cap="Number of variants excluded per filters in each of the datasets", warning=FALSE, message=FALSE}
 
-flt %<>% pivot_wider(id_cols=c("V1"),names_from="V2",values_from="V3") %>% mutate(Dataset=V1,Missingness=lmiss,MAF=frq,HWE=hwe,Total=txt,Duplicates=txt - frq - hwe - lmiss, Raw=raw) %>% select(c(Dataset,Missingness,HWE,MAF,Duplicates,Total,Raw)) 
+flt %<>% pivot_wider(id_cols=c("V1"),names_from="V2",values_from="V3") %>% mutate(Dataset=V1, Missingness=lmiss, MAF=frq, HWE=hwe, Total=txt, Duplicates=txt - frq - hwe - lmiss, Raw=raw) %>% select(c(Dataset,Missingness,HWE,MAF,Total))
+
+fix.tmp = fix %>% filter(V2=="total") %>% ungroup() %>% mutate(Raw = min_sites) %>% select(Dataset, Raw)
+
+flt %<>% left_join(fix.tmp, by="Dataset")
 
 # print table
 flt %>% knitr::kable()
 ```
 
 
-```{r chrom-filter-breakdown, fig.cap="Proportion of variants excluded by filter (as proportion of total filtered sites)", warning=FALSE, message=FALSE}
+```{r chrom-filter-breakdown, fig.cap="Proportion of variants excluded by filter (as proportion of total filtered sites)", fig.height = 4, fig.width = 6,warning=FALSE, message=FALSE}
 
-flt %>% mutate(Missingness = Missingness/Total, HWE = HWE/Total, MAF = MAF/Total, Duplicates = Duplicates/Total) %>% select(-c(Total,Raw)) %>% pivot_longer(-Dataset,names_to = "Filter", values_to = "Proportion") %>% ggplot(aes(x=Dataset,fill=Filter,y=Proportion)) + geom_bar(position=position_dodge(), stat="identity")
+flt %>% mutate(Missingness = Missingness/Total, HWE = HWE/Total, MAF = MAF/Total) %>% select(-c(Total,Raw)) %>% pivot_longer(-Dataset,names_to = "Filter", values_to = "Proportion") %>% ggplot(aes(x=Dataset,fill=Filter,y=Proportion)) + geom_bar(position=position_dodge(), stat="identity")
 ```
 
 
@@ -189,14 +194,15 @@ knitr::include_graphics(normalizePath(rulegraph_file))
 
 ## Reproducibility
 
-The code for reproducing this analysis is available [here](https://github.com/pmonnahan/DataPrep). The repo contains:
+The code for reproducing this analysis is available
+\href{https://github.com/pmonnahan/DataPrep}{{\color{blue}{\underline{here}}}}. The repo contains:
 
 * A Snakemake workflow for running all steps.
 * A collection of scripts to acheive individual steps
 * A Singularity definitions file that can be used to generate the Singularity image used to run all steps.
 ** This image file is also directly available upon request
 
-The code for reproducing this report is available [here](https://github.com/pmonnahan/DataPrep/blob/master/scripts/DataPrep_report.Rmd). 
+The code for reproducing this report is available \href{https://github.com/pmonnahan/DataPrep/blob/master/scripts/DataPrep_report.Rmd}{{\color{blue}{\underline{here}}}}.
 
 The input files for the figures produced herein are from:
 
