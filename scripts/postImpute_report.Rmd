@@ -36,7 +36,7 @@ if(any(unlist(lapply(params, function(x) x=="NA")))) stop("Missing input params"
 chrom_file <- read.table(params$chrom_file)
 merge_file <- read.table(params$merge_file)
 chunk_file <- read.table(params$chunk_file, head = T)
-snp_file <- read.table(params$snp_file, head=T)
+snp_file <- read.table(params$snp_file, head=T, fill=TRUE)
 rulegraph_file <- params$rulegraph_file
 yaml <- read_yaml(params$config_file)
 
@@ -158,7 +158,9 @@ Totals = totals %>% group_by(Chromosome) %>% summarize(total = max(V4,na.rm=T))
 merge_file %<>% mutate(Chromosome=as.ordered(as.numeric(str_remove(V1, "chr")))) %>% left_join(Totals, by="Chromosome") %>% mutate(Proportion = V3/total)
 merge_file %<>% mutate(prop = V3/total)
 
-merge_file %>% filter(V2=="ovlp") %>% ggplot(aes(x=Chromosome,y=prop, fill = Chromosome)) + geom_bar(stat="identity",position=position_dodge()) + ylab("Proportion overlapping variants") + scale_fill_discrete(guide=F)
+if ("ovlp" %in% merge_file$V2){
+  merge_file %>% filter(V2=="ovlp") %>% ggplot(aes(x=Chromosome,y=prop, fill = Chromosome)) + geom_bar(stat="identity",position=position_dodge()) + ylab("Proportion overlapping variants") + scale_fill_discrete(guide=F)
+}
 ```
 
 \newpage
