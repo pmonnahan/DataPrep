@@ -9,10 +9,26 @@ The purpose of this pipeline is to perform the following for a set of input PLIN
 
 ## Data preparation
 
-chrom file
-allele file
-markerID file
-flip file
+Following the 'data' field (containing the path info) of each query dataset specified in the config.yml file, the following four fields must be specified.
+
+-   **chrom_key**: tab-delimited text file with 2 columns (no header).  The first column contains the old chromosome names, and the second column contains the new names. Used for converting to numeric names. e.g chr10 to 10.
+-   **allele_key**: tab-delimited text file with 5 columns (no header).  First column is snpID and following columns are: old_allele1 old_allele2 new_allele1 new_allele2.  Used for converting alleles with A/B specification to ACGT.  Oftentimes provided in the dbGaP download.  If alleles are already specified in ACGT format, this field can be set to 'none'
+-   **ID_key**: tab-delimited text file with 2 columns (no header).  First column is old SNP ID and second column is new SNP ID.  Used for converting to rsID format.  If SNP IDs are already in rs-format, this field can be set to 'none'
+-   **flip_key**: text file with single column containing SNP rsIDs that need to be flipped. Set this field to 'none' if all alleles are already on the same strand as the target reference genome.
+
+For an example of how all components for a query dataset could be specified:
+
+    query:
+      "cog1":
+        data: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.genotype-calls-
+    matrixfmt.c1.HMB/with_fam/cog9904_9905_snp6_with_fam"
+        chrom_key: "/home/pmonnaha/pmonnaha/misc/PlinkChrRename.txt"
+        allele_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-in
+    fo.c.MULTI/recodePlinkAlleles.txt"
+        ID_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c
+    .MULTI/recodePlinkMarkers_noDups.txt"
+        flip_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info
+    .c.MULTI/opposite_strands_rsIDs.txt"
 
 ## Requirements
 
