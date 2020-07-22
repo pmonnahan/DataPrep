@@ -22,47 +22,47 @@ from distutils import spawn
 import multiprocessing
 
 # Define Functions
-def var_miss(bfile, threshold, output, plink):
-    cmd = f"{plink} --bfile {bfile} --geno {threshold} --make-bed --out {output}"
+def var_miss(bfile, threshold, output, plink, rsrc_str):
+    cmd = f"{plink} --bfile {bfile} --geno {threshold} --make-bed --out {output} {rsrc_str}"
     pp1 = subprocess.Popen(cmd, shell=True)  # Run cmd1
     out1, err1 = pp1.communicate()  # Wait for it to finish
     return(out1, err1)
 
-def geno_miss(bfile, threshold, output, plink):
-    cmd = f"{plink} --bfile {bfile} --mind {threshold} --make-bed --out {output}"
+def geno_miss(bfile, threshold, output, plink, rsrc_str):
+    cmd = f"{plink} --bfile {bfile} --mind {threshold} --make-bed --out {output} {rsrc_str}"
     pp1 = subprocess.Popen(cmd, shell=True)  # Run cmd1
     out1, err1 = pp1.communicate()  # Wait for it to finish
     return(out1, err1)
 
-def geno_flt(bfile, keptSamples, output, plink):
-    cmd = f"{plink} --bfile {bfile} --keep {keptSamples} --make-bed --out {output}"
+def geno_flt(bfile, keptSamples, output, plink, rsrc_str):
+    cmd = f"{plink} --bfile {bfile} --keep {keptSamples} --make-bed --out {output} {rsrc_str}"
     pp1 = subprocess.Popen(cmd, shell=True)  # Run cmd1
     out1, err1 = pp1.communicate()  # Wait for it to finish
     return(out1, err1)
 
-def var_flt(bfile, keptVariants, output, plink):
-    cmd = f"{plink} --bfile {bfile} --extract {keptVariants} --make-bed --out {output}"
+def var_flt(bfile, keptVariants, output, plink, rsrc_str):
+    cmd = f"{plink} --bfile {bfile} --extract {keptVariants} --make-bed --out {output} {rsrc_str}"
     pp1 = subprocess.Popen(cmd, shell=True)  # Run cmd1
     out1, err1 = pp1.communicate()  # Wait for it to finish
     return(out1, err1)
 
-def calc_stats(bfile, plink):
+def calc_stats(bfile, plink, rsrc_str):
     '''calculate frequency, missingness, HWE prob, and missingness by sex'''
 
-    cmd = f"{plink} --bfile {bfile} --freq --missing --hardy --mpheno 3 --pheno {bfile}.fam --test-missing --out {bfile}"
+    cmd = f"{plink} --bfile {bfile} --freq --missing --hardy --mpheno 3 --pheno {bfile}.fam --test-missing --out {bfile} {rsrc_str}"
     pp1 = subprocess.Popen(cmd, shell=True)  # Run cmd1
     out1, err1 = pp1.communicate()  # Wait for it to finish
 
     return(out1, err1)
 
-def wrapQC(input, output, tvm1, tgm, tvm2, maf, hwe, mbs, plink, snps_only=False):
+def wrapQC(input, output, tvm1, tgm, tvm2, maf, hwe, mbs, plink, rsrc_str, snps_only=False):
 
-    out1, err1 = var_miss(input, tvm1, f"{output}.var_miss{tvm1}", plink)
-    out2, err2 = geno_miss(f"{output}.var_miss{tvm1}", tgm, f"{output}.geno_miss{tgm}", plink)
+    out1, err1 = var_miss(input, tvm1, f"{output}.var_miss{tvm1}", plink, rsrc_str)
+    out2, err2 = geno_miss(f"{output}.var_miss{tvm1}", tgm, f"{output}.geno_miss{tgm}", plink, rsrc_str)
     out3, err3 = geno_flt(input, f"{output}.geno_miss{tgm}.fam",
-                         f"{output}.geno_flt{tgm}", plink)
+                         f"{output}.geno_flt{tgm}", plink, rsrc_str)
 
-    out2, err2 = calc_stats(f"{output}.geno_flt{tgm}", plink)
+    out2, err2 = calc_stats(f"{output}.geno_flt{tgm}", plink, rsrc_str)
     DF_list = []
     flt_strings = {'frq': f"frq_MAF < {maf}", 'hwe': f"hwe_P < {hwe}", 'lmiss': f"lmiss_F_MISS > {tvm2}", 'missing': f"missing_P < {mbs}"}
     for stat in ['frq', 'hwe', 'lmiss', 'missing']:
@@ -83,9 +83,9 @@ def wrapQC(input, output, tvm1, tgm, tvm2, maf, hwe, mbs, plink, snps_only=False
         awk_string = "awk '{split(\"A T C G\",tmp); for (i in tmp) arr[tmp[i]]; if(!($5 in arr) || !($6 in arr)) print $2}' >> "
     else:
         awk_string = "awk '{if($5 == \"N\" || $6 == \"N\") print $2}' >> "
-    cmd = f"{plink} --bfile {output}.geno_flt{tgm} --list-duplicate-vars suppress-first --out {output}; tail -n +2 {output}.dupvar | cut -f 4 >> {output}.fltdSNPs.txt;"
+    cmd = f"{plink} --bfile {output}.geno_flt{tgm} --list-duplicate-vars suppress-first --out {output} {rsrc_str} ; tail -n +2 {output}.dupvar | cut -f 4 >> {output}.fltdSNPs.txt;"
     cmd += f"cat {output}.geno_flt{tgm}.bim | " + awk_string + output + ".fltdSNPs.txt; "
-    cmd += f"cut -f 2 {output}.geno_flt{tgm}.bim | sort | uniq -d >> {output}.fltdSNPs.txt; {plink} --bfile {output}.geno_flt{tgm} --exclude {output}.fltdSNPs.txt --make-bed --out {output}"
+    cmd += f"cut -f 2 {output}.geno_flt{tgm}.bim | sort | uniq -d >> {output}.fltdSNPs.txt; {plink} --bfile {output}.geno_flt{tgm} --exclude {output}.fltdSNPs.txt --make-bed --out {output} {rsrc_str}"
     pp1 = subprocess.Popen(cmd, shell=True)  # Run cmd1
     out1, err1 = pp1.communicate()  # Wait for it to finish
 
@@ -108,6 +108,8 @@ if __name__ == "__main__":
                         help='')
     parser.add_argument('-hwe', type=str, metavar='p_value_cutoff_HWEtest', default=-1,
                         help='')
+    parser.add_argument('-r', type=str, metavar='resource_string', default='1',
+                        help='string to be used to specify resources for plink. e.g. --memory 16000 --threads 1'),
     parser.add_argument('-s', type=str, metavar='sample_file', default='all',
                         help='File containing sample IDs to retain from merged plink files. One sample per line')
     parser.add_argument('--snps_only', action='store_true', help="output only snps; i.e. filter indels")
@@ -120,6 +122,6 @@ if __name__ == "__main__":
     if args.p == "plink":
         args.p = spawn.find_executable(args.p)
     if args.snps_only:
-        wrapQC(args.i, f"{args.d}/{args.o}", args.tvm1, args.tgm, args.tvm2, args.maf, args.hwe, args.mbs, args.p, snps_only=True)
+        wrapQC(args.i, f"{args.d}/{args.o}", args.tvm1, args.tgm, args.tvm2, args.maf, args.hwe, args.mbs, args.p, args.r, snps_only=True)
     else:
-        wrapQC(args.i, f"{args.d}/{args.o}", args.tvm1, args.tgm, args.tvm2, args.maf, args.hwe, args.mbs, args.p)
+        wrapQC(args.i, f"{args.d}/{args.o}", args.tvm1, args.tgm, args.tvm2, args.maf, args.hwe, args.mbs, args.p, args.r)

@@ -63,3 +63,8 @@ merge: "true"
 delete_intermediates: "false"
 cmd_prefix: "module load plink/1.90b6.10; module load htslib/1.6; module load bcftools/1.9;"
 python: 'python3.7'
+run_settings:
+  local_run: 'false'
+  cluster_config: 'workflow/cluster.yaml'
+  scheduler: 'pbs'
+
