@@ -8,8 +8,8 @@ __default__:
   mem: '8gb'
   m: 'a'
   r: 'n'
-  o: 'OandE/{rule}.{wildcards}.out'
-  e: 'OandE/{rule}.{wildcards}.err'
+  o: 'OandE/{rule}.{wildcards}out'
+  e: 'OandE/{rule}.{wildcards}err'
 
 update_alleles_IDs:
   queue: mangi

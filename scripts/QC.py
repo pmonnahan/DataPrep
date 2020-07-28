@@ -108,7 +108,7 @@ if __name__ == "__main__":
                         help='')
     parser.add_argument('-hwe', type=str, metavar='p_value_cutoff_HWEtest', default=-1,
                         help='')
-    parser.add_argument('-r', type=str, metavar='resource_string', default='1',
+    parser.add_argument('-r', type=str, metavar='resource_string', default='--memory 16000 --threads 1',
                         help='string to be used to specify resources for plink. e.g. --memory 16000 --threads 1'),
     parser.add_argument('-s', type=str, metavar='sample_file', default='all',
                         help='File containing sample IDs to retain from merged plink files. One sample per line')

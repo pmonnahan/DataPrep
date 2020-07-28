@@ -26,3 +26,13 @@ if __name__ == "__main__":
     parser.add_argument('-o', type=str, metavar='output', required=True, help='')
     args = parser.parse_args()
 
+    with open(args.i, 'r') as input_file:
+        for line in input_file:
+            if not line.startswith("#"):
+                line.replace('"','').strip(",")
+                if not line[0] == "Probe Set ID":
+                    if line[4] == "+"
+
+
+
+

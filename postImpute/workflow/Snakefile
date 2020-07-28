@@ -81,7 +81,7 @@ else:
 
 # Conditionally set expected outputs of various steps depending on flags in config.yml
 def get_all_inputs(wildcards):
-    input_list = expand(f"{{rawdata}}/{{rawdata}}_raw{{chrom}}.bed", rawdata=QUERY.keys(), chrom=CHROMS)
+    # input_list = expand(f"{{rawdata}}/{{rawdata}}_raw{{chrom}}.bed", rawdata=QUERY.keys(), chrom=CHROMS)
     input_list += expand(f"{{rawdata}}/{{rawdata}}_chr{{chrom}}-QC.bed", rawdata=QUERY.keys(), chrom=CHROMS)
     input_list += expand(f"{{rawdata}}/{{rawdata}}_chr{{chrom}}-QC-Ref.bed", rawdata=QUERY.keys(), chrom=CHROMS)
     if config['merge'] == 'true':
@@ -106,7 +106,6 @@ def get_snpList_input(wildcards):
 def plnk_rsrc(rule_name, plink_specs):
     try: resources = plink_specs[rule_name]
     except KeyError: resources = plink_specs['__default__']
-    print(resources)
     return(resources)
 
 rule all:
@@ -204,10 +203,7 @@ rule update_varIDs_and_sex:
     params: sex_dat = config['phenotype_data']['sex_file']
     shell: """
     {CMD_PREFIX} awk '{{printf("%s\\t%s:%s\\n",$2,$1,$4)}}' {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}.bim > {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}_varIDs.txt; 
-    {CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom} --keep-allele-order 
-    --update-name {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}_varIDs.txt --update-sex accessory/sex.txt 
-    --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs_chr{wildcards.chrom} {plnk_rsrc(rule, plink_run_specs)}
-    """
+    {CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom} --keep-allele-order --update-name {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}_varIDs.txt --update-sex accessory/sex.txt --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs_chr{wildcards.chrom} """ + f"{plnk_rsrc(rule, plink_run_specs)}"
 
 #TODO: If no case/control datasets, use a user-provided fam file?
 #TODO: set_pheno is not working correctly
@@ -237,7 +233,7 @@ rule merge_inputs:
         input_list = ",".join([f"{x}/{x}-QC-Ref-varIDs_chr{{chrom}}" for x in QUERY.keys()])
     run:
         if len(QUERY.keys()) > 1:
-            shell(f"{CMD_PREFIX} {PYTHON} {CODE}/mergeInputs.py -i {{params.input_list}} -d {os.getcwd()} -o {OUT}_chr{{wildcards.chrom}} -p plink --drop_pos_dups {plnk_rsrc(rule, plink_run_specs)}")
+            shell(f"{CMD_PREFIX} {PYTHON} {CODE}/mergeInputs.py -i {{params.input_list}} -d {os.getcwd()} -o {OUT}_chr{{wildcards.chrom}} -p plink --drop_pos_dups -r '{plnk_rsrc(rule, plink_run_specs)}'")
         else:
             shell(f"{CMD_PREFIX} plink --bfile {{params.input_list}} --make-bed --keep-allele-order --out {OUT}_chr{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}")
 
