@@ -71,12 +71,12 @@ if config['run_settings']['local_run'] == 'true':
     localrules: all, update_alleles_IDs, FixRef, QCcombine_query, download_refs
 else:
     localrules: all, make_rulegraph, set_pheno, download_refs
-    if os.path.exists(config['run_settings']['cluster_config']):
-        clusterfile = yaml.load(open(config['run_settings']['cluster_config']), Loader=yaml.FullLoader)
-        for rule in clusterfile.keys():
-            if config['run_settings']['scheduler'] == 'slurm': plink_run_specs[rule] = f"--memory {int(clusterfile[rule]['mem-per-cpu'].replace('G','000')) * int(clusterfile[rule]['ntasks'])} --threads {clusterfile[rule]['ntasks']}"
-            if config['run_settings']['scheduler'] == 'pbs':  plink_run_specs[rule] = f"--memory {clusterfile[rule]['mem'].replace('b','').replace('m','').replace('g','000')} --threads 1"
-    else: print(f"Must provide a cluster configuration file under run_settings -> cluster_config in the config.yml file.\nFile \'{config['cluster_config']}\' does not exist")
+    assert config['run_settings']['scheduler'] in ['pbs', 'slurm'], print(f"\nThe scheduler specified at run_settings -> scheduler: \'{config['run_settings']['scheduler']}\' is invalid.\n")
+    assert os.path.exists(config['run_settings']['cluster_config']), print(f"\nMust provide a cluster configuration file under run_settings -> cluster_config in the config.yml file\nFile \'{config['run_settings']['cluster_config']}\' does not exist\n")
+    clusterfile = yaml.load(open(config['run_settings']['cluster_config']), Loader=yaml.FullLoader)
+    for rule in clusterfile.keys(): # Purpose of this code is to make sure plink requests same amount of memory/threads as specified in cluster.yaml file
+        if config['run_settings']['scheduler'] == 'slurm': plink_run_specs[rule] = f"--memory {int(clusterfile[rule]['mem-per-cpu'].replace('G','000')) * int(clusterfile[rule]['ntasks'])} --threads {clusterfile[rule]['ntasks']}"
+        elif config['run_settings']['scheduler'] == 'pbs':  plink_run_specs[rule] = f"--memory {clusterfile[rule]['mem'].replace('b','').replace('m','').replace('g','000')} --threads 1"
 
 
 # Conditionally set expected outputs of various steps depending on flags in config.yml
@@ -147,8 +147,7 @@ rule download_refs:
         # cmd = f"cat {config['CrossMap']['fasta']} | awk 'BEGIN{{split({chrom_string},chroms); if(\$3 in chroms | \$8 in chroms) print \$0}}' | gzip > accessory/{os.path.basename(config['CrossMap']['chain'])}.flt.gz"
         # shell(cmd)
 
-#TODO: add option to download chain and fasta files; but recall that raw chain file must be filtered to exclude any non-canonical chromosome names
-rule cross_map:  #TODO Across all datasets, two imputed variants on chromosome 9 are missing an alt/ref field.  Must filter in this step to avoid error in next.  Still not working
+rule cross_map:
     input: CROSSFASTA, CROSSCHAIN
     output: f"{{rawdata}}/{{rawdata}}_hg19_chr{{chrom}}.vcf.gz"
     params:
@@ -172,7 +171,7 @@ rule QCcombine_query:
     input: "{rawdata}/{rawdata}_raw{chrom}.bed"
     output: "{rawdata}/{rawdata}-QC_chr{chrom}.bed"
     params:
-        pre1 = "{rawdata}/{rawdata}_raw{chrom}",
+        pre1 = "{rawdata}/{rawdata}_raw{chrom}", pre2 = "{rawdata}/{rawdata}-QC_chr{chrom}"
         tvm1 = config['QC']['vm1'], tgm = config['QC']['gm'], tvm2 = config['QC']['vm2'],
         hwe = config['QC']['hwe'], maf = config['QC']['maf'], mbs = config['QC']['mbs'],
     run:
@@ -180,12 +179,11 @@ rule QCcombine_query:
             with open("scripts/QCcombine_query.sh", 'w') as QCsh:
                 cmd = f"{CMD_PREFIX} {PYTHON} {CODE}/QC.py -i {{params.pre1}} -d {{wildcards.rawdata}} -o {{wildcards.rawdata}}-QC_chr{{wildcards.chrom}} " \
                       f"-p plink -tvm1 {{params.tvm1}} -tgm {{params.tgm}} -tvm2 {{params.tvm2}} -hwe {{params.hwe}} -mbs {{params.mbs}} -maf -9  -r '{plnk_rsrc(rule, plink_run_specs)}' --snps_only; " \
-                      f"mv {{wildcards.rawdata}}/{{wildcards.rawdata}}-QC_chr{{wildcards.chrom}}.geno* {{wildcards.rawdata}}/tmp; " \
-                      f"mv {{wildcards.rawdata}}/{{wildcards.rawdata}}-QC_chr{{wildcards.chrom}}.var* {{wildcards.rawdata}}/tmp"
+                      f"mv {{params.pre2}}.geno* {{wildcards.rawdata}}/tmp; mv {{params.pre2}}.var* {{wildcards.rawdata}}/tmp"
                 if config['delete_intermediates'] == 'true': cmd += f"rm -r {{wildcards.rawdata}}/tmp/"
             shell(cmd)
-        else:
-            shell(f"{CMD_PREFIX} plink --bfile {{params.pre1}} --make-bed --out {{params.pre1}}-QC")
+        else: shell(f"{CMD_PREFIX} plink --bfile {{params.pre1}} --make-bed --out {{params.pre1}}-QC")
+        if config['delete_intermediates'] == 'true': shell(f"rm {{wildcards.rawdata}}/{{wildcards.rawdata}}_raw{{wildcards.chrom}}*")
 
 rule restore_strand:
     input: "{rawdata}/{rawdata}-QC_chr{chrom}.bed"
@@ -236,11 +234,15 @@ rule merge_inputs:
             shell(f"{CMD_PREFIX} {PYTHON} {CODE}/mergeInputs.py -i {{params.input_list}} -d {os.getcwd()} -o {OUT}_chr{{wildcards.chrom}} -p plink --drop_pos_dups -r '{plnk_rsrc(rule, plink_run_specs)}'")
         else:
             shell(f"{CMD_PREFIX} plink --bfile {{params.input_list}} --make-bed --keep-allele-order --out {OUT}_chr{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}")
+        if config['delete_intermediates'] == 'true':
+            if len(QUERY.keys()) > 1:
+                shell(f"rm */*chr{{wildcards.chrom}}.*unq*")
+            shell(f"rm ./*/*QC-Ref-varIDs_chr*; rm ./*/*QC-Ref_chr*; rm ./*/*-QC_chr*")
 
 rule filter_merged:
     input: f"{OUT}_chr{{chrom}}.bed"
     output: f"{OUT}-QC_chr{{chrom}}.bed"
-    shell: f"rm */*chr{{wildcards.chrom}}.*unq*; {CMD_PREFIX} plink --bfile {OUT}_chr{{wildcards.chrom}} --maf {config['QC']['maf']} --keep-allele-order --make-bed --out {OUT}-QC_chr{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}"
+    shell: f"{CMD_PREFIX} plink --bfile {OUT}_chr{{wildcards.chrom}} --maf {config['QC']['maf']} --keep-allele-order --make-bed --out {OUT}-QC_chr{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}"
 
 #TODO extract chunks and samples excluded from input directory
 #TODO extract number of variants that were unmapped during CrossMap

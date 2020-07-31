@@ -1,7 +1,6 @@
 #Modify all lines indicated with MODIFY
 samples: "all"  # This can be set to path of file containing individuals to be kept from merged query file. One sample per line.
 outname: "ALL"
-local_run: 'false'
 query:
   "cog1":
     data: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.genotype-calls-matrixfmt.c1.HMB/with_fam/cog9904_9905_snp6_with_fam"
@@ -53,7 +52,7 @@ QC:
   maf: "0.01"  # mimimum Minor allele frequency
   hwe: "0.0000001"  # p-value threshold for whether site follows hardy-weinberg
   mbs: "0.0000001"  # p-value treshold for test of whether missingness varies by sex
-impute_prep: 'true'
+  mbc: "0.0001"  # p-value threshold for missingness by case
 chroms: "all"
 include_x: "no"
 bcftools:

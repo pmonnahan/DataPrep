@@ -4,6 +4,7 @@ import os
 import subprocess
 import pdb
 import shutil
+import yaml
 
 # Get the date
 from datetime import datetime
@@ -65,24 +66,24 @@ if CHROMS == 'all':
     if config['include_x'] == 'yes': CHROMS.append('X')
 
 # Run locally or submit to cluster depending on config.yml
-plink_run_specs = {'__default__': ""} # Set default to empty string in case of local run.  i.e. default to plink's auto-detection of resources
+plink_run_specs = {'__default__': ""} # Set default to empty string in case of local run.  i.e. default to plink's auto-detection of resources.
 if config['run_settings']['local_run'] == 'true':
     localrules: all, update_alleles_IDs, FixRef, QCcombine_query, set_pheno
 else:
     localrules: all, make_rulegraph, set_pheno
-    if os.path.exists(config['run_settings']['cluster_config']):
-        clusterfile = yaml.load(open(config['run_settings']['cluster_config']), Loader=yaml.FullLoader)
-        for rule in clusterfile.keys():
-            if config['run_settings']['scheduler'] == 'slurm': plink_run_specs[rule] = f"--memory {int(clusterfile[rule]['mem-per-cpu'].replace('G','000')) * int(clusterfile[rule]['ntasks'])} --threads {clusterfile[rule]['ntasks']}"
-            if config['run_settings']['scheduler'] == 'pbs':  plink_run_specs[rule] = f"--memory {clusterfile[rule]['mem'].replace('b','').replace('m','').replace('g','000')} --threads 1"
-    else: print(f"Must provide a cluster configuration file under run_settings -> cluster_config in the config.yml file.\nFile \'{config['cluster_config']}\' does not exist")
+    assert config['run_settings']['scheduler'] in ['pbs', 'slurm'], print(f"\nThe scheduler specified at run_settings -> scheduler: \'{config['run_settings']['scheduler']}\' is invalid.\n")
+    assert os.path.exists(config['run_settings']['cluster_config']), print(f"\nMust provide a cluster configuration file under run_settings -> cluster_config in the config.yml file\nFile \'{config['run_settings']['cluster_config']}\' does not exist\n")
+    clusterfile = yaml.load(open(config['run_settings']['cluster_config']), Loader=yaml.FullLoader)
+    for rule in clusterfile.keys(): # Purpose of this code is to make sure plink requests same amount of memory/threads as specified in cluster.yaml file
+        if config['run_settings']['scheduler'] == 'slurm': plink_run_specs[rule] = f"--memory {int(clusterfile[rule]['mem-per-cpu'].replace('G','000')) * int(clusterfile[rule]['ntasks'])} --threads {clusterfile[rule]['ntasks']}"
+        elif config['run_settings']['scheduler'] == 'pbs':  plink_run_specs[rule] = f"--memory {clusterfile[rule]['mem'].replace('b','').replace('m','').replace('g','000')} --threads 1"
 
 
 # Conditionally set expected outputs of various steps depending on flags in config.yml
 def get_all_inputs(wildcards):
     input_list = [f"{OUT}-report.pdf", f"{OUT}-rulegraph.png"]
     if config['merge'] == 'true':
-        input_list.append(f"{OUT}.bed")
+        input_list += [f"{OUT}.bed"]
     if config['impute_prep'] == 'true':
         input_list += expand(f"{{rawdata}}/{{rawdata}}.chr{{chrom}}.vcf.gz", rawdata=QUERY.keys(), chrom=CHROMS)
     if config['download_reference'] == 'true':
@@ -92,7 +93,6 @@ def get_all_inputs(wildcards):
 def plnk_rsrc(rule_name, plink_specs):
     try: resources = plink_specs[rule_name]
     except KeyError: resources = plink_specs['__default__']
-    print(resources)
     return(resources)
 
 rule all:
@@ -231,18 +231,32 @@ rule merge_inputs:
         if config['merge'] == 'true':
             shell(f"{CMD_PREFIX} {PYTHON} {CODE}/mergeInputs.py -i {{params.input_list}} -d {os.getcwd()} -o {OUT} -p plink")
 
+#
+# ## CASE/CONTROLS ARE NOT YET LABELLED AT THIS POINT
+# rule filter_merged:
+#     input: f"{OUT}.bed"
+#     output: f"{OUT}_flt.bed"
+#     run:
+#         import pandas as pd
+#         shell(f"{CMD_PREFIX} plink --bfile {OUT} --test-missing --out {OUT}")
+#         dat = pd.read_table(f"{OUT}.missing", header=None)
+#         dat2 = dat[dat['P'] < int(config['QC']['mbc'])]
+#         dat2['SNP'].to_csv('accessory/mbc_filter.txt', header=False)
+#         shell("f{CMD_PREFIX} plink --bfile {OUT} --exclude accessory/mbc_filter.txt --keep-allele-order --make-bed --out {OUT}_flt")
+
+
 rule mis_impute_prep:
     input: "{rawdata}/{rawdata}-QC-Ref.bed", "{rawdata}/.{rawdata}-PhenoFixed"
     output: "{rawdata}/{rawdata}.chr{chrom}.vcf.gz"
     params:
         pre = "{rawdata}/{rawdata}",
     run:
-        if config['impute_prep'] == 'true':
-            shell(f"{CMD_PREFIX} plink --bfile {{params.pre}}-QC-Ref --chr {{wildcards.chrom}} --recode vcf-iid --keep-allele-order --out {{params.pre}}.chr{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)};"
-                  f" {CMD_PREFIX} bcftools sort -Oz -o {{params.pre}}.chr{{wildcards.chrom}}.vcf.gz {{params.pre}}.chr{{wildcards.chrom}}.vcf; rm {{params.pre}}.chr{{wildcards.chrom}}.vcf")
+        shell(f"{CMD_PREFIX} plink --bfile {{params.pre}}-QC-Ref --chr {{wildcards.chrom}} --recode vcf-iid --keep-allele-order --out {{params.pre}}.chr{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}; "
+              f" {CMD_PREFIX} bcftools sort -Oz -o {{params.pre}}.chr{{wildcards.chrom}}.vcf.gz {{params.pre}}.chr{{wildcards.chrom}}.vcf; rm {{params.pre}}.chr{{wildcards.chrom}}.vcf")
 
 
 #TODO: grepping in line 204 is not specific to latest run.  Numbers from older runs are included as well.
+#TODO: add mbc filter to QC report
 rule make_report:
     input: expand("{rawdata}/{rawdata}.chr{chrom}.vcf.gz", rawdata=QUERY.keys(), chrom=CHROMS), f"{OUT}-rulegraph.png"
     output: f"{OUT}-report.pdf"

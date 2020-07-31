@@ -1,7 +1,6 @@
 #Modify all lines indicated with MODIFY
 samples: "all"  # This can be set to path of file containing individuals to be kept from merged query file. One sample per line.
 outname: "CCLRP"
-local_run: 'false'
 query:
   "cclrp": "/PATH/TO/DIRECTORY/CONTAINING/IMPUTATION/OUTPUT/" # MODIFY
 phenotype_data: # Must specify a phenotype file where first column is sample ID (must match those in imputed VCFs) and phenotype is second column OR list query datasets by case/control (comma-separated, no spaces)
