@@ -27,15 +27,14 @@ if config['singularity']['use_singularity'] == 'true' and config['singularity'][
     if config["CrossMap"]['download_refs'] == "true":
         CROSSCHAIN = f"accessory/{os.path.basename(config['CrossMap']['chain'])}.flt.gz"
         CROSSFASTA = f"accessory/{os.path.basename(config['CrossMap']['fasta']).strip('.gz')}"
-        bind_paths = ",".join(set([os.path.dirname(str(x)) for x in list(QUERY.values())] + ['OandE', 'accessory', config['singularity']['code']] + list(QUERY.keys())))
+        bind_paths = ",".join(set([os.path.dirname(str(x)) for x in list(QUERY.values())] + [f"{os.getcwd()}/{x}" for x in ['OandE', 'accessory', config['singularity']['code']] + list(QUERY.keys())]))
     else:
         CROSSCHAIN = config['CrossMap']['chain']
         CROSSFASTA = config['CrossMap']['fasta']
         assert all(os.path.exists(x) for x in [CROSSFASTA, CROSSCHAIN])
-        bind_paths = ",".join(set([os.path.dirname(str(x)) for x in list(QUERY.values())] + [os.path.dirname(config['CrossMap']['chain']), os.path.dirname(config['CrossMap']['fasta']), 'OandE', 'accessory', config['singularity']['code']] + list(QUERY.keys())))
+        bind_paths = ",".join(set([os.path.dirname(str(x)) for x in list(QUERY.values())] + [os.path.dirname(config['CrossMap']['chain']), os.path.dirname(config['CrossMap']['fasta'])] + [f"{os.getcwd()}/{x}" for x in ['OandE', 'accessory', config['singularity']['code']] + list(QUERY.keys())]))
     CMD_PREFIX = f"set +u; {config['singularity']['module']}; singularity exec --bind {bind_paths},{os.getcwd()} {config['singularity']['image']}"
     CMD_PIPE = f"singularity exec --bind {bind_paths},{os.getcwd()} {config['singularity']['image']}"
-    #He has to specify version of singularity...
     CODE = config['singularity']['code']
 else:
     CMD_PREFIX = config['cmd_prefix']
@@ -119,7 +118,7 @@ rule clean:
 rule make_rulegraph:
     output: f"{OUT}-rulegraph.png"
     params: mod_cmd = CMD_PREFIX.replace(f"set +u; {config['singularity']['module']};", "")
-    shell: f"{config['singularity']['module']}; snakemake --rulegraph --configfile workflow/config.yml | {{params.mod_cmd}} dot -Tpng > {{output}}"
+    shell: f"{config['singularity']['module']}; snakemake --rulegraph --configfile workflow/config.yml |{{params.mod_cmd}} dot -Tpng > {{output}}"
     # shell: "touch {OUT}-rulegraph.png"
 
 rule download_refs:
@@ -167,11 +166,19 @@ rule convert_vcfs:
         f"{CMD_PREFIX} plink --vcf {{input}} --const-fid 0 --keep-allele-order --vcf-min-gp {config['min_gp']} "
         f"--make-bed --out {{wildcards.rawdata}}/{{wildcards.rawdata}}_raw{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}"
 
-rule QCcombine_query:
+rule update_varIDs_and_sex:
     input: "{rawdata}/{rawdata}_raw{chrom}.bed"
+    output: "{rawdata}/{rawdata}-varIDs_chr{chrom}.bed"
+    params: sex_dat = config['phenotype_data']['sex_file']
+    shell: """
+    {CMD_PREFIX} awk '{{printf("%s\\t%s:%s\\n",$2,$1,$4)}}' {wildcards.rawdata}/{wildcards.rawdata}_raw{wildcards.chrom}.bim > {wildcards.rawdata}/{wildcards.rawdata}_raw{wildcards.chrom}_varIDs.txt; 
+    {CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}_raw{wildcards.chrom} --keep-allele-order --update-name {wildcards.rawdata}/{wildcards.rawdata}_raw{wildcards.chrom}_varIDs.txt --update-sex accessory/sex.txt --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-varIDs_chr{wildcards.chrom} """ + f"{plnk_rsrc(rule, plink_run_specs)}"
+
+rule QCcombine_query:
+    input: "{rawdata}/{rawdata}-varIDs_chr{chrom}.bed"
     output: "{rawdata}/{rawdata}-QC_chr{chrom}.bed"
     params:
-        pre1 = "{rawdata}/{rawdata}_raw{chrom}", pre2 = "{rawdata}/{rawdata}-QC_chr{chrom}"
+        pre1 = "{rawdata}/{rawdata}-varIDs_chr{chrom}", pre2 = "{rawdata}/{rawdata}-QC_chr{chrom}",
         tvm1 = config['QC']['vm1'], tgm = config['QC']['gm'], tvm2 = config['QC']['vm2'],
         hwe = config['QC']['hwe'], maf = config['QC']['maf'], mbs = config['QC']['mbs'],
     run:
@@ -183,7 +190,7 @@ rule QCcombine_query:
                 if config['delete_intermediates'] == 'true': cmd += f"rm -r {{wildcards.rawdata}}/tmp/"
             shell(cmd)
         else: shell(f"{CMD_PREFIX} plink --bfile {{params.pre1}} --make-bed --out {{params.pre1}}-QC")
-        if config['delete_intermediates'] == 'true': shell(f"rm {{wildcards.rawdata}}/{{wildcards.rawdata}}_raw{{wildcards.chrom}}*")
+        if config['delete_intermediates'] == 'true': shell(f"rm {{wildcards.rawdata}}/{{wildcards.rawdata}}_raw{{wildcards.chrom}}*; {{wildcards.rawdata}}/{{wildcards.rawdata}}-varIDs_chr{{wildcards.chrom}}*")
 
 rule restore_strand:
     input: "{rawdata}/{rawdata}-QC_chr{chrom}.bed"
@@ -194,41 +201,29 @@ rule restore_strand:
         f"{CMD_PREFIX} plink --bfile {{wildcards.rawdata}}/{{wildcards.rawdata}}-QC_chr{{wildcards.chrom}} --make-bed "
         f"--a2-allele {{params.bim_file}} 6 2 --out {{wildcards.rawdata}}/{{wildcards.rawdata}}-QC-Ref_chr{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}"
 
-# Not tested since adding sex
-rule update_varIDs_and_sex:
-    input: "{rawdata}/{rawdata}-QC-Ref_chr{chrom}.bed"
-    output: "{rawdata}/{rawdata}-QC-Ref-varIDs_chr{chrom}.bed"
-    params: sex_dat = config['phenotype_data']['sex_file']
-    shell: """
-    {CMD_PREFIX} awk '{{printf("%s\\t%s:%s\\n",$2,$1,$4)}}' {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}.bim > {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}_varIDs.txt; 
-    {CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom} --keep-allele-order --update-name {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}_varIDs.txt --update-sex accessory/sex.txt --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs_chr{wildcards.chrom} """ + f"{plnk_rsrc(rule, plink_run_specs)}"
-
-#TODO: If no case/control datasets, use a user-provided fam file?
-#TODO: set_pheno is not working correctly
 rule set_pheno:
-    input: "{rawdata}/{rawdata}-QC-Ref-varIDs_chr{chrom}.bed"
+    input: "{rawdata}/{rawdata}-QC-Ref_chr{chrom}.bed"
     output: "{rawdata}/.{rawdata}-PhenoFixed_chr{chrom}"
     params: pheno_dat = config['phenotype_data']['pheno_file']
     run:
         if os.path.exists(params.pheno_dat):
-            shell("{CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs_chr{wildcards.chrom} --pheno accessory/pheno_file.txt --keep-allele-order --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs-pheno_chr{wildcards.chrom} {plnk_rsrc(rule, plink_run_specs)};"
-                  "mv {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs-pheno_chr{wildcards.chrom}.bed {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs_chr{wildcards.chrom}.bed; "
-                  "mv {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs-pheno_chr{wildcards.chrom}.bim {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs_chr{wildcards.chrom}.bim; "
-                  "mv {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs-pheno_chr{wildcards.chrom}.fam {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs_chr{wildcards.chrom}.fam; "
+            shell("{CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom} --pheno accessory/pheno_file.txt --keep-allele-order --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-pheno_chr{wildcards.chrom} {plnk_rsrc(rule, plink_run_specs)};"
+                  "mv {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-pheno_chr{wildcards.chrom}.bed {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}.bed; "
+                  "mv {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-pheno_chr{wildcards.chrom}.bim {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}.bim; "
+                  "mv {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-pheno_chr{wildcards.chrom}.fam {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}.fam; "
                   "touch {output}")
         elif f"{wildcards.rawdata}" in config['phenotype_data']['case_datasets'].strip().split(","):
-            shell("{CMD_PREFIX} sed -i 's/-9$/2/' {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs_chr{wildcards.chrom}.fam; touch {output}")
+            shell("{CMD_PREFIX} sed -i 's/-9$/2/' {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}.fam; touch {output}")
         elif f"{wildcards.rawdata}" in config['phenotype_data']['control_datasets'].strip().split(","):
-            shell("{CMD_PREFIX} sed -i 's/-9$/1/' {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-varIDs_chr{wildcards.chrom}.fam; touch {output}")
+            shell("{CMD_PREFIX} sed -i 's/-9$/1/' {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}.fam; touch {output}")
         else:
             shell("touch {output}")
 
-
 rule merge_inputs:
-    input: expand("{rawdata}/{rawdata}-QC-Ref-varIDs_chr{{chrom}}.bed", rawdata=QUERY.keys()), expand("{rawdata}/.{rawdata}-PhenoFixed_chr{{chrom}}", rawdata=QUERY.keys())
+    input: expand("{rawdata}/{rawdata}-QC-Ref_chr{{chrom}}.bed", rawdata=QUERY.keys()), expand("{rawdata}/.{rawdata}-PhenoFixed_chr{{chrom}}", rawdata=QUERY.keys())
     output: f"{OUT}_chr{{chrom}}.bed"
     params:
-        input_list = ",".join([f"{x}/{x}-QC-Ref-varIDs_chr{{chrom}}" for x in QUERY.keys()])
+        input_list = ",".join([f"{x}/{x}-QC-Ref_chr{{chrom}}" for x in QUERY.keys()])
     run:
         if len(QUERY.keys()) > 1:
             shell(f"{CMD_PREFIX} {PYTHON} {CODE}/mergeInputs.py -i {{params.input_list}} -d {os.getcwd()} -o {OUT}_chr{{wildcards.chrom}} -p plink --drop_pos_dups -r '{plnk_rsrc(rule, plink_run_specs)}'")
@@ -237,15 +232,13 @@ rule merge_inputs:
         if config['delete_intermediates'] == 'true':
             if len(QUERY.keys()) > 1:
                 shell(f"rm */*chr{{wildcards.chrom}}.*unq*")
-            shell(f"rm ./*/*QC-Ref-varIDs_chr*; rm ./*/*QC-Ref_chr*; rm ./*/*-QC_chr*")
+            shell(f"rm ./*/*QC-Ref_chr*; rm ./*/*-QC_chr*")
 
 rule filter_merged:
     input: f"{OUT}_chr{{chrom}}.bed"
     output: f"{OUT}-QC_chr{{chrom}}.bed"
     shell: f"{CMD_PREFIX} plink --bfile {OUT}_chr{{wildcards.chrom}} --maf {config['QC']['maf']} --keep-allele-order --make-bed --out {OUT}-QC_chr{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}"
 
-#TODO extract chunks and samples excluded from input directory
-#TODO extract number of variants that were unmapped during CrossMap
 rule make_report:
     input: expand(f"{OUT}-QC_chr{{chrom}}.bed", chrom=CHROMS), f"{OUT}-rulegraph.png"
     output: f"{OUT}-report.pdf"

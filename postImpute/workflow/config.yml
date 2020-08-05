@@ -1,5 +1,4 @@
 #Modify all lines indicated with MODIFY
-samples: "all"  # This can be set to path of file containing individuals to be kept from merged query file. One sample per line.
 outname: "CCLRP"
 query:
   "cclrp": "/PATH/TO/DIRECTORY/CONTAINING/IMPUTATION/OUTPUT/" # MODIFY
@@ -30,7 +29,7 @@ QC:
   hwe: "0.0000001"  # p-value threshold for whether site follows hardy-weinberg
   mbs: "0.0000001"  # p-value treshold for test of whether missingness varies by sex
 chroms: "all"
-include_x: "no"
+include_x: "no" # Currently, not supported
 bcftools:
   executable: "bcftools"
   threads: '6'
