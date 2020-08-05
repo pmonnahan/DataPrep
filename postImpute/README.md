@@ -2,7 +2,8 @@
 
 The purpose of this pipeline is to convert(/combine) one or more imputed datasets created by the [TOPMed Imputation Server](https://imputation.biodatacatalyst.nhlbi.nih.gov/) into a single set (separated by chromosome) of PLINK-formatted datasets.  In brief, one or more sets of gzipped, _human_ VCF files are first run through [CrossMap](http://crossmap.sourceforge.net/), which converts coordinates from the GRCh38 reference genome to GRCh19.  Then, these files are converted to PLINK format and variants are filtered for missingness, duplicates, and indels (are removed).  For each chromosome, we then merge these resulting files across datasets.  Only variants that have been retained across all datasets are included in this merged dataset.  Rare alleles are then filtered from this merged dataset.  
 
-![Pipeline DAG](https://github.com/pmonnahan/DataPrep/tree/master/postImpute/Pipeline_DAG.png)
+![Pipeline DAG](https://github.com/pmonnahan/DataPrep/blob/master/postImpute/Pipeline_DAG.png)
+
 
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
