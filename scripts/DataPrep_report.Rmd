@@ -6,6 +6,8 @@ output:
   pdf_document:
     includes:
       in_header: header.tex
+    toc: true
+    toc_depth: 3
 params:
   flt_file: NA
   FixRef_file: NA

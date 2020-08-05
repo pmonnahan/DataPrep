@@ -6,6 +6,8 @@ output:
   pdf_document:
     includes:
       in_header: header.tex
+    toc: true
+    toc_depth: 3
 params:
   chrom_file: NA
   merge_file: NA
@@ -115,7 +117,7 @@ The proportion here is calculated for each chromosome as:  #unmapped / (#mapped 
 \newpage
 
 # PLINK Conversion and initial QC
-Following coordinate conversion, the VCFs for each chromosome are converted to plink format.  During this conversion, poorly imputed genotypes are filtered out.  That is, if the probability of the most probable genotype falls below the following threshold, then the genotype for this sample is set to missing.
+Following coordinate conversion, the VCFs for each chromosome are converted to plink format.  During this conversion, poorly imputed genotypes are set to missing.  That is, if the probability of the most probable genotype falls below the following threshold, then the genotype for this sample is set to missing.
 
 ```{r min-genotype-prob}
 yaml$min_gp
@@ -166,7 +168,7 @@ if ("ovlp" %in% merge_file$V2){
 \newpage
 ## Removing rare alleles 
 
-Removal of rare alleles is the final and likely most consequential step in the post-imputation QC pipeline.  We wait to filter rare alleles until after merging in case there are fixed differences across datasets.  Such variants, although rare in each individual dataset, may be intermediate in the merged dataset.  The reason that this filter will likely remove the largest number of variants is due to the fact that the majority of imputed variants are, in fact, non-variant.  The 
+Removal of rare alleles is the final and likely most consequential step in the post-imputation QC pipeline.  We wait to filter rare alleles until after merging in case there are fixed differences across datasets.  Such variants, although rare in each individual dataset, may be intermediate in the merged dataset.  The reason that this filter will likely remove the largest number of variants is due to the fact that the majority of imputed variants are, in fact, non-variant.
 ```{r maf-stats, fig.cap = c("Proportion of variants that were RETAINED following removal of rare SNPs", "Total number of imputed variants remaining in the final QC'ed dataset."), fig.height = 3, fig.width = 5, warning=FALSE, message=FALSE}
 
 merge_file %>% filter(V2=="MAF") %>% ggplot(aes(x=Chromosome,y=prop, fill = Chromosome)) + geom_bar(stat="identity",position=position_dodge()) + ylab("Proportion of RETAINED variants") + scale_fill_discrete(guide=F)

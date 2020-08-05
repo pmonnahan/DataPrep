@@ -91,15 +91,15 @@ def get_all_inputs(wildcards):
     return(input_list)
 
 def plnk_rsrc(rule_name, plink_specs):
-    try: resources = plink_specs[rule_name]
-    except KeyError: resources = plink_specs['__default__']
+    try: resources = plink_specs[rule_name] # Grab resource specifications from dict created earlier based on rule_name
+    except KeyError: resources = plink_specs['__default__'] # Set to default specifications if resources for rule_name not specified
     return(resources)
 
 rule all:
     input: get_all_inputs
     # input: expand(f"{{rawdata}}/{{rawdata}}.chr{{chrom}}.vcf.gz", rawdata=QUERY.keys(), chrom=CHROMS), f"{OUT}-report.pdf", f"{OUT}-rulegraph.png"
 
-rule clean:
+rule clean: # run snakemake clean to clear all (or most) of the created output
     params: dir_list = " ".join([f"{os.getcwd()}/{x}/*" for x in QUERY.keys()])
     run:
         for key in QUERY.keys():
@@ -231,7 +231,7 @@ rule merge_inputs:
         if config['merge'] == 'true':
             shell(f"{CMD_PREFIX} {PYTHON} {CODE}/mergeInputs.py -i {{params.input_list}} -d {os.getcwd()} -o {OUT} -p plink")
 
-#
+# TODO: Flesh out phenotype labelling in order to implement the (optional?) filter for missingness by case/control
 # ## CASE/CONTROLS ARE NOT YET LABELLED AT THIS POINT
 # rule filter_merged:
 #     input: f"{OUT}.bed"
