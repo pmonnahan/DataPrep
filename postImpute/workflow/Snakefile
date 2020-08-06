@@ -117,9 +117,7 @@ rule clean:
 
 rule make_rulegraph:
     output: f"{OUT}-rulegraph.png"
-    params: mod_cmd = CMD_PREFIX.replace(f"set +u; {config['singularity']['module']};", "")
-    shell: f"{config['singularity']['module']}; snakemake --rulegraph --configfile workflow/config.yml |{{params.mod_cmd}} dot -Tpng > {{output}}"
-    # shell: "touch {OUT}-rulegraph.png"
+    shell: f"snakemake --rulegraph --configfile workflow/config.yml > accessory/Pipeline_DAG.dot; {CMD_PREFIX} dot -Tpng accessory/Pipeline_DAG.dot > {{output}}"
 
 rule download_refs:
     output: CROSSCHAIN, CROSSFASTA

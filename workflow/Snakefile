@@ -14,10 +14,6 @@ TIME = i.strftime('%Y-%m-%d')
 # Specify config file
 configfile: "workflow/config.yml"
 
-
-
-#TODO: Add reading of cluster.yaml file to better handle memory and thread specs in PLINK
-
 # Parse config.yml file
 OUT = config['outname']
 QUERY = config['query']
@@ -43,7 +39,7 @@ if config['singularity']['use_singularity'] == 'true' and config['singularity'][
         for k,v in QUERY[x].items():
             path = os.path.dirname(str(v))
             if path not in query_paths: query_paths.append(path)
-    bind_paths = ",".join(set(query_paths + [os.path.dirname(REFASTA), os.path.dirname(REFVCF), 'OandE', 'accessory', config['singularity']['code']] + list(QUERY.keys())))
+    bind_paths = ",".join(set(query_paths + [os.path.dirname(REFASTA), os.path.dirname(REFVCF)] + [f"{os.getcwd()}/{x}" for x in ['OandE', 'accessory', config['singularity']['code']] + list(QUERY.keys())]))
     CMD_PREFIX = f"set +u; {config['singularity']['module']}; singularity exec --bind {bind_paths},{os.getcwd()} {config['singularity']['image']}"
     CODE = config['singularity']['code']
 else:
@@ -110,8 +106,7 @@ rule clean: # run snakemake clean to clear all (or most) of the created output
 
 rule make_rulegraph:
     output: f"{OUT}-rulegraph.png"
-    params: mod_cmd = CMD_PREFIX.replace(f"set +u; {config['singularity']['module']};", "")
-    shell: f"{config['singularity']['module']}; snakemake --rulegraph --configfile workflow/config.yml | {{params.mod_cmd}} dot -Tpng > {{output}}"
+    shell: f"snakemake --rulegraph --configfile workflow/config.yml > accessory/Pipeline_DAG.dot; {CMD_PREFIX} dot -Tpng accessory/Pipeline_DAG.dot > {{output}}"
 
 rule update_alleles_IDs: # Update chromosome labels, SNP IDs, and alleles
     output: "{rawdata}/tmp/{rawdata}_alleles_IDs.bed"
