@@ -63,7 +63,13 @@ yaml$singularity$image
 
 ## Reference allele fixing
 
-In contrast to a VCF, where alleles are specified with respect to a specified reference genome (reference versus alternative alleles), PLINK-formatted files often specify alleles as major/minor alleles based on the frequency in the dataset.  In an attempt to recover, the reference/alternative specification for a particular reference genome, we use the bcftools plugin '+fixref', which requires not only the reference sequence (fasta) file, but also a VCF file containing variant sites that are used to identify mismatching alleles in the query dataset.  Importantly, the program will only swap the major/minor alleles to match the reference.  It will not perform any strand flipping, where it converts genotypes to be specified with respect to the nucleotide on the opposite strand.  Although the program will attempt to identify these strand flips, it doesn't make the correction as the authors consider this a risky move that should not be handled in an automated fashion.  Thus, flip-strand mismatches are ultimately removed.  If there are a large number of these, the user should attempt to understand and resolve the source of the issue and rerun this pipeline.
+In contrast to a VCF, where alleles are specified with respect to a specified reference genome (reference versus alternative alleles), PLINK-formatted files often specify alleles as major/minor alleles based on the frequency in the dataset.  Furthermore, many commonly used arrays will contain a mixture of SNPs genotyped on either the + or - strand.  Lastly, the default behavior of PLINK is to automatically set the minor to A1 and the major allele to A2, which can unintentionally generate inconsistencies in allele specifications across datasets.  
+
+With respect to a reference genome, two possible types of errors can occur:
+-   Flipped strand:  The genotype is specified with respect to the opposite strand relative to the reference genome.
+-   Swapped allele:  The genotype is specified on the same strand as the reference genome, but the A1 (minor) allele has been set to equal the 'reference' allele when it ought to be set to equal the non-reference/'alternative' allele
+
+To identify these errors, we use the bcftools plugin '+fixref', which requires not only the reference sequence (fasta) file, but also a VCF file containing variant sites that are used to identify mismatching alleles in the query dataset.  Importantly, if the program determines that no strand issues exist and that the reference/alternative alleles have simply been swapped, then program will swap the major/minor alleles to match the reference.  It will not perform any strand flipping, where it converts genotypes to be specified with respect to the nucleotide on the opposite strand.  Although the program will attempt to identify these strand flips, it doesn't make the correction as the authors consider this a risky move that should not be handled in an automated fashion.  Thus, flip-strand mismatches are ultimately removed.  If there are a large number of these, the user should attempt to understand and resolve the source of the issue and rerun this pipeline.
 
 By default, the pipeline will download the following files for the hg19 reference genome:
 
@@ -100,6 +106,7 @@ An indication of whether alleles are now specified correctly is to plot frequenc
 Dat = foreach(i = 1:length(dat_files[[1]]), .combine=rbind) %do% {
   dat = read.table(dat_files[[1]][i], na.strings=".", fill = T)
   # We do 1 - freq below, so that we get REF frequency as reported in ref_freqs.txt
+  #THIS NEXT STEP IS CRASHING RECENT RUNS WITH 32GB OF MEMORY.  It's the pivot call
   dat = dat %>% pivot_longer(-c(V1,V2,V3), names_to="hap",values_to="allele") %>% group_by(V1,V2,V3) %>% summarize(freq = 1 - sum(allele,na.rm=T)/n(), datset=str_split(basename(dat_files[[1]][i]),"[.]")[[1]][1], dd = basename(dat_files[[1]][i]))
   dat %<>% mutate(chrom=V1,pos=V2,ID=V3)
   dat

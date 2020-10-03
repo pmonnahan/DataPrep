@@ -5,6 +5,8 @@ import subprocess
 import pdb
 import shutil
 import yaml
+import pandas as pd
+import numpy as np
 
 # Get the date
 from datetime import datetime
@@ -67,9 +69,9 @@ if not os.path.exists("accessory/pheno_file.txt"):
 # Run locally or submit to cluster depending on config.yml
 plink_run_specs = {'__default__': ""} # Set default to empty string in case of local run.  i.e. default to plink's auto-detection of resources
 if config['run_settings']['local_run'] == 'true':
-    localrules: all, update_alleles_IDs, FixRef, QCcombine_query, download_refs
+    localrules: all, update_alleles_IDs, FixRef, QCcombine_query, download_refs, merge_typed_keys
 else:
-    localrules: all, make_rulegraph, set_pheno, download_refs
+    localrules: all, make_rulegraph, download_refs, merge_typed_keys
     assert config['run_settings']['scheduler'] in ['pbs', 'slurm'], print(f"\nThe scheduler specified at run_settings -> scheduler: \'{config['run_settings']['scheduler']}\' is invalid.\n")
     assert os.path.exists(config['run_settings']['cluster_config']), print(f"\nMust provide a cluster configuration file under run_settings -> cluster_config in the config.yml file\nFile \'{config['run_settings']['cluster_config']}\' does not exist\n")
     clusterfile = yaml.load(open(config['run_settings']['cluster_config']), Loader=yaml.FullLoader)
@@ -87,7 +89,7 @@ def get_all_inputs(wildcards):
         input_list.append(f"{OUT}.bed")
         input_list.append(f"{OUT}-QC.bed")
     input_list += expand(f"{{rawdata}}/.{{rawdata}}-PhenoFixed", rawdata=QUERY.keys())
-    input_list.append(f"accessory/{OUT}.imptkey.txt")
+    input_list.append(f"accessory/typed_key.txt")
     return(input_list)
 
 def get_merge_chroms_input(wildcards):
@@ -109,7 +111,7 @@ def plnk_rsrc(rule_name, plink_specs):
 
 rule all:
     #input: get_all_inputs
-    input: expand(f"{OUT}-QC_chr{{chrom}}.bed", chrom=CHROMS), f"{OUT}-report.pdf", f"{OUT}-rulegraph.png"
+    input: expand(f"{OUT}-QC_chr{{chrom}}.bed", chrom=CHROMS), f"{OUT}-report.pdf", f"{OUT}-rulegraph.png", f"accessory/typed_key.txt"
 
 rule clean:
     input: expand("{query}",query=QUERY.keys())
@@ -121,7 +123,7 @@ rule make_rulegraph:
 
 rule download_refs:
     output: CROSSCHAIN, CROSSFASTA
-    params: chrom_list = [f"{x}" for x in range(1,23)] + [f"chr{x}" for x in range(1,23)]
+    params: chrom_list = [f"chr{x}" for x in CHROMS] + CHROMS # This list filters chain file to remove additional chromosomes that throw issues in crossmap
     run:
         if os.path.exists(f"accessory/{os.path.basename(config['CrossMap']['chain'])}"): os.remove(f"accessory/{os.path.basename(config['CrossMap']['chain'])}")
         if os.path.exists(f"accessory/{os.path.basename(config['CrossMap']['fasta'])}"): os.remove(f"accessory/{os.path.basename(config['CrossMap']['fasta'])}")
@@ -134,7 +136,7 @@ rule download_refs:
             for line in chain_file:
                 line0 = line.split()
                 if len(line0) > 3:
-                    if line0[2] in params.chrom_list and line0[7] in params.chrom_list: # and or?
+                    if line0[2] in params.chrom_list and line0[7] in params.chrom_list: # This checks that both chromosomes in the chain file exist in the expected set of chromosomes.  and or?
                         printing = True
                         new_chain.write(line)
                     else: printing = False
@@ -152,10 +154,58 @@ rule cross_map:
         out_pre = f"{{rawdata}}/{{rawdata}}_hg19_chr{{chrom}}.vcf",
         awk_string = """awk \'{if($5!=\".\") print $0}\'"""
     threads: int(config['CrossMap']['threads'])
+    run:
+        if config['convert_coords'] == 'true':
+            shell(f"{CMD_PREFIX} python {config['CrossMap']['exec']} vcf {CROSSCHAIN} {{params.in_pre}}/chr{{wildcards.chrom}}.dose.vcf.gz {CROSSFASTA} {{params.out_pre}}; "
+            f"{CMD_PREFIX} {{params.awk_string}} {{params.out_pre}} | bgzip --threads {{threads}} > {{params.out_pre}}.gz; "
+            f"rm {{params.out_pre}}; {CMD_PREFIX} gzip -f {{params.out_pre}}.unmap")
+        else:
+            shell(f"cp {{params.in_pre}}/chr{{wildcards.chrom}}.dose.vcf.gz {{output}}")
+
+rule typed_key:
+    output: f"accessory/{{rawdata}}_typed_key.txt"
+    params:
+        in_pre = lambda wildcards: QUERY[wildcards.rawdata],
+        awk_string1 = """awk \'{printf(\"%s\\ttyped\\n\", $1)}\'""",
+        awk_string2 = """awk \'{printf(\"%s\\ttypedOnly\\n\", $1)}\'"""
     shell:
-        f"{CMD_PREFIX} python {config['CrossMap']['exec']} vcf {CROSSCHAIN} {{params.in_pre}}/chr{{wildcards.chrom}}.dose.vcf.gz {CROSSFASTA} {{params.out_pre}}; "
-        f"{CMD_PREFIX} {{params.awk_string}} {{params.out_pre}} | bgzip --threads {{threads}} > {{params.out_pre}}.gz; "
-        f"rm {{params.out_pre}}; {CMD_PREFIX} gzip -f {{params.out_pre}}.unmap"
+        f"{CMD_PREFIX} zgrep Genotyped {{params.in_pre}}/chr*.info.gz | {{params.awk_string1}} | grep -v -f {{params.in_pre}}/typed-only.txt | "
+        f"grep -v SNP | cut -d \':\' -f 2- > accessory/{{wildcards.rawdata}}_typed_key.txt || true; "
+        f"{CMD_PREFIX} {{params.awk_string2}} {{params.in_pre}}/typed-only.txt | grep -v Position >> accessory/{{wildcards.rawdata}}_typed_key.txt"
+
+rule merge_typed_keys:
+    input: expand(f"accessory/{{rawdata}}_typed_key.txt", rawdata=QUERY.keys())
+    output: f"accessory/typed_key.txt"
+    run:
+        for i, key in enumerate(input):
+            datset = key.split("/")[1].replace("_typed_key.txt",'')
+            cdat = pd.read_table(key, sep = r"\s+", names=['snpID', 'source'])
+            cdat['dat'] = datset
+            if i==0: dat = cdat
+            else:
+                dat = pd.merge(dat,cdat, on=('snpID','source'), how='outer')
+                dat['dat'] = dat['dat_x'].fillna('') + '.' + dat['dat_y'].fillna('')
+                dat = dat.drop(['dat_x','dat_y'], axis=1)
+        dat = dat.set_index(['snpID','source']).unstack('source')
+        dat.to_csv("accessory/body.txt", header=False, sep = "\t")
+        with open('accessory/head.txt', 'w') as head: head.write("snpID\ttyped\ttypedOnly\n")
+        shell("cat accessory/head.txt accessory/body.txt > accessory/typed_key_tmp.txt; rm accessory/head.txt; rm accessory/body.txt")
+        if config['convert_coords'] == 'true':
+            with open("accessory/typed_key_tmp.txt", 'r') as typedkey:
+                with open("accessory/typed.vcf", 'w') as vcf:
+                    for line in typedkey:
+                        if not line.startswith("snpID"):
+                            line = line.split()
+                            marker = line[0].split(":")
+                            vcf.write(f"{marker[0]}\t{marker[1]}\t{line[0]}\t{marker[2]}\t{marker[3]}\n")
+            shell(f"{CMD_PREFIX} python {config['CrossMap']['exec']} vcf {CROSSCHAIN} accessory/typed.vcf {CROSSFASTA} accessory/typed_crossmap.vcf")
+            cm = pd.read_table("accessory/typed_crossmap.vcf", names = ['chrom', 'pos', 'snpID', 'ref', 'alt'], dtype={'pos':np.int32})
+            tk = pd.read_table("accessory/typed_key_tmp.txt")
+            fdat = pd.merge(cm, tk, on=('snpID'), how='left')  #how to join?
+            fdat.to_csv("accessory/typed_key.txt", header=False, sep = "\t", index=False)
+            shell("rm accessory/typed_key_tmp.txt accessory/typed.vcf accessory/typed_crossmap.vcf")
+        else: shell("mv accessory/typed_key_tmp.txt accessory/typed_key.txt")
+
 
 rule convert_vcfs:
     input: f"{{rawdata}}/{{rawdata}}_hg19_chr{{chrom}}.vcf.gz"
@@ -205,7 +255,7 @@ rule set_pheno:
     params: pheno_dat = config['phenotype_data']['pheno_file']
     run:
         if os.path.exists(params.pheno_dat):
-            shell("{CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom} --pheno accessory/pheno_file.txt --keep-allele-order --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-pheno_chr{wildcards.chrom} {plnk_rsrc(rule, plink_run_specs)};"
+            shell(f"{CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom} --pheno accessory/pheno_file.txt --keep-allele-order --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-pheno_chr{wildcards.chrom} {plnk_rsrc(rule, plink_run_specs)};"
                   "mv {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-pheno_chr{wildcards.chrom}.bed {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}.bed; "
                   "mv {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-pheno_chr{wildcards.chrom}.bim {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}.bim; "
                   "mv {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-pheno_chr{wildcards.chrom}.fam {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}.fam; "
@@ -255,10 +305,18 @@ rule make_report:
                     for line in dat_chunks:
                         if not line.startswith("#"): exc_file.write(f"{dataset}\t" + line.replace(" ", "-"))
                         if not line.endswith("\n"): exc_file.write(f"\n")
+        with open("accessory/typed.txt", 'w') as typed:
+            typed.write(f"dataset\tsnpID\n")
+            for dataset,directory in QUERY.items():
+                with open(f"{directory}/typed-only.txt") as dat_chunks:
+                    for line in dat_chunks:
+                        if not line.startswith("#"): typed.write(f"{dataset}\t" + "\t".join(line.split(":")))
+                        if not line.endswith("\n"): typed.write(f"\n")
         with open("scripts/gather_report_data.sh", 'w') as report_cmds:
             report_cmds.write("wc -l */*fltdSNPs*txt | grep -v -e scripts -e total | awk \'{split($2,a,\"/\"); split(a[2],b,\"QC_\"); split(b[2],c,\".\"); print a[1],c[1],c[3],$1}\' > accessory/chromfilter.stats\n")
             report_cmds.write("wc -l */*dupvar | awk \'{split($2,a,\"/\"); split(a[2],b,\"QC_\"); split(b[2],c,\".\"); print a[1],c[1],c[2],$1}\' | grep -v total >> accessory/chromfilter.stats\n")
-            report_cmds.write("for f in */*unmap.gz; do printf \"${f}\\t\"; zcat $f | wc -l ; done | awk \'{split($1,a,\"/\"); n=split(a[2],b,\"_\"); split(b[n],c,\".\"); print a[1],c[1],c[3],$2}\' >> accessory/chromfilter.stats\n")
+            if config['convert_coords'] == 'true':
+                report_cmds.write("for f in */*unmap.gz; do printf \"${f}\\t\"; zcat $f | wc -l ; done | awk \'{split($1,a,\"/\"); n=split(a[2],b,\"_\"); split(b[n],c,\".\"); print a[1],c[1],c[3],$2}\' >> accessory/chromfilter.stats\n")
             report_cmds.write("grep variants */*raw*log | grep QC | awk \'{split($1,b,\"/\"); n=split(b[2],c,\"_\"); print b[1],c[n]}\' | tr \":\" \" \" | sed \'s/raw/chr/\' | sed \'s/.log/ raw/\' >> accessory/chromfilter.stats\n")
             report_cmds.write("wc -l */*-QC-Ref_chr*.bim | awk \'{split($2,a,\"/\"); n=split(a[2],b,\"_\"); printf(\"%s\\t%s\\tpostQC\\t%s\\n\",a[1],b[n],$1)}\' | sed \'s/.bim//\' | grep -v total >> accessory/chromfilter.stats\n")
             report_cmds.write("grep people *QC_chr*log | grep -v males | awk \'{n=split($1,a,\"_\"); print a[n]}\' | sed \'s/.log:/\\tMAF\\t/\' > accessory/merge.stats\n")
@@ -315,12 +373,16 @@ rule extract_snpList:
         else:
             print("Must provide a valid path to a snp list (tab-delimited text file with chromosome and position) file in workflow/config.yml at snp_list")
 
-rule make_impute_snp_key:
-    input: f"{{rawdata}}/{{rawdata}}_hg19_chr{{chrom}}.vcf.gz"
-    output: f"{{rawdata}}/{{rawdata}}_chr{{chrom}}.imptkey.txt"
-    shell:
-        f"{CMD_PREFIX} zcat {{input[0]}} | " + "{CMD_PIPE} vawk '{{split($8,a,\";\"); split(a[3],b,\"=\"); if(I$AF>0.0 && a[4]==\"IMPUTED\") print $1,$2,$3,a[4],b[2]; if(I$AF>0.0 && a[4]!=\"IMPUTED\") print $1,$2,$3,a[5],b[2]}}'" \
-                                                     " | sed 's/chr/{wildcards.rawdata}\t/' > {wildcards.rawdata}/{wildcards.rawdata}_chr{wildcards.chrom}.imptkey.txt"
+rule make_typed_snp_key:
+    output: "accessory/typed.txt"
+    run:
+        with open("accessory/typed.txt", 'w') as typed:
+            typed.write(f"dataset\tsnpID\n")
+            for dataset,directory in QUERY.items():
+                with open(f"{directory}/typed-only.txt") as dat_chunks:
+                    for line in dat_chunks:
+                        if not line.startswith("#"): typed.write(f"{dataset}\t" + "\t".join(line.split(":")))
+                        if not line.endswith("\n"): typed.write(f"\n")
 
 rule cat_impt_keys:
     input: expand(f"{{rawdata}}/{{rawdata}}_chr{{chrom}}.imptkey.txt", rawdata=QUERY.keys(), chrom=CHROMS)

@@ -13,7 +13,7 @@ singularity:
   code: 'scripts/'
   use_singularity: 'true'
 CrossMap:
-  exec: "/usr/local/bin/miniconda/bin/CrossMap.py"
+  exec: "/usr/local/bin/miniconda/bin/CrossMap.py" # This will point to the executable installed in the singularity image, and should be left alone if using the associated singularity image
   download_refs: 'true'
   chain: "ftp://ftp.ensembl.org/pub/assembly_mapping/homo_sapiens/GRCh38_to_GRCh37.chain.gz"  #This file must be filtered to exclude any non-canonical chromosome names
   fasta: "https://hgdownload.soe.ucsc.edu/goldenPath/hg19/bigZips/hg19.fa.gz"
@@ -21,6 +21,7 @@ CrossMap:
 min_gp: "0.85"  # Minimum genotype probability.  Values below this are converted to missing.
 snp_list: "accessory/ALL_snpLoc.txt"
 perform_QC: 'true'
+convert_coords: 'true' # Convert coordinates from hg38 to hg19?
 QC:
   vm1: "0.2"
   gm: "0.1"
@@ -29,7 +30,7 @@ QC:
   hwe: "0.0000001"  # p-value threshold for whether site follows hardy-weinberg
   mbs: "0.0000001"  # p-value treshold for test of whether missingness varies by sex
 chroms: "all"
-include_x: "no" # Currently, not supported
+include_x: "no"
 bcftools:
   executable: "bcftools"
   threads: '6'

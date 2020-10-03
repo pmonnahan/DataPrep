@@ -98,7 +98,14 @@ totals %>% ggplot(aes(y=V4/1000000,x=Chromosome,fill=Chromosome)) + geom_bar(sta
 \newpage
 
 # Coordinate Conversion
-The program \href{http://crossmap.sourceforge.net/}{{\color{blue}{\underline{CrossMap}}}} was used to convert coordinates from GRCh38 to GRCh19.  The reference fasta and 'chain' files (key linking coordinates across chromosomes) were taken from:
+The program \href{http://crossmap.sourceforge.net/}{{\color{blue}{\underline{CrossMap}}}} was optionally used to convert coordinates from GRCh38 to GRCh19.  If the following flag was set to true in the config file, then coordinate conversion was performed:
+
+Reference Fasta
+```{r convert_coords}
+yaml$convert_coords
+```
+
+The reference fasta and 'chain' files (key linking coordinates across chromosomes) were taken from:
 
 Reference Fasta
 ```{r ref-fasta}
@@ -111,9 +118,11 @@ yaml$CrossMap$chain
 ```
 
 ```{r crossmap-unmapped, fig.cap="Proportion of variants whose coordinates were not successfully cross-mapped",fig.height = 6, fig.width = 7, warning=FALSE, message=FALSE}
-chrom_file %>% filter(V3 %in% c("unmap","raw")) %>% pivot_wider(id_cols=c("V1","V2"),names_from="V3",values_from="V4") %>% mutate(Dataset=V1,Chromosome=as.ordered(as.numeric(str_remove(V2, "chr"))),Unmapped=unmap / (unmap + raw)) %>% select(c(Dataset,Chromosome,Unmapped)) %>% pivot_longer(c(Unmapped),names_to = "State", values_to = "Variants") %>% ggplot(aes(x=Chromosome,fill=Dataset,y=Variants)) + geom_bar(stat="identity", position=position_dodge(), width=0.75) + ylab("Proportion of unmapped variants") + theme(axis.text.x=element_text(angle=45,hjust=1))
+if (nrow(chrom_file[chrom_file$V3=="unmap",]) > 0){
+  chrom_file %>% filter(V3 %in% c("unmap","raw")) %>% pivot_wider(id_cols=c("V1","V2"),names_from="V3",values_from="V4") %>% mutate(Dataset=V1,Chromosome=as.ordered(as.numeric(str_remove(V2, "chr"))),Unmapped=unmap / (unmap + raw)) %>% select(c(Dataset,Chromosome,Unmapped)) %>% pivot_longer(c(Unmapped),names_to = "State", values_to = "Variants") %>% ggplot(aes(x=Chromosome,fill=Dataset,y=Variants)) + geom_bar(stat="identity", position=position_dodge(), width=0.75) + ylab("Proportion of unmapped variants") + theme(axis.text.x=element_text(angle=45,hjust=1))
+}
 ```
-The proportion here is calculated for each chromosome as:  #unmapped / (#mapped + #unmapped). Unmapped variants were removed from subsequent steps.
+The proportion here is calculated for each chromosome as:  #unmapped / (#mapped + #unmapped). Unmapped variants were removed from subsequent steps.  No figure is produced if coordinate conversion was disabled.
 \newpage
 
 # PLINK Conversion and initial QC
@@ -173,9 +182,16 @@ Removal of rare alleles is the final and likely most consequential step in the p
 
 merge_file %>% filter(V2=="MAF") %>% ggplot(aes(x=Chromosome,y=prop, fill = Chromosome)) + geom_bar(stat="identity",position=position_dodge()) + ylab("Proportion of RETAINED variants") + scale_fill_discrete(guide=F)
 
-merge_file %>% filter(V2=="MAF") %>% ggplot(aes(x=Chromosome,y=V3, fill = Chromosome)) + geom_bar(stat="identity",position=position_dodge()) + ylab("Numbers of retained common variants") + scale_fill_discrete(guide=F)
+merge_file %>% filter(V2=="MAF") %>% ggplot(aes(x=Chromosome,y=V3/1000000, fill = Chromosome)) + geom_bar(stat="identity",position=position_dodge()) + ylab("Millions of retained common variants") + scale_fill_discrete(guide=F)
 ```
 \newpage
+
+With a grand total of SNPs:
+
+```{r grand-total}
+merge_file %>% filter(V2=="MAF") %>% summarize(total=sum(V3))
+```
+
 
 # Rule Graph
 

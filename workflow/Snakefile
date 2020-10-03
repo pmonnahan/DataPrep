@@ -56,9 +56,10 @@ for datset in QUERY.keys():
         os.mkdir(datset)
         os.mkdir(f"{datset}/tmp")
 
+#TODO Make this robust to chromosomes > 23.
 CHROMS = config['chroms']
 if CHROMS == 'all':
-    CHROMS = [str(x) for x in range(1, 23)]
+    CHROMS = [str(x) for x in range(1, 27)]
     if config['include_x'] == 'yes': CHROMS.append('X')
 
 # Run locally or submit to cluster depending on config.yml
@@ -80,8 +81,7 @@ def get_all_inputs(wildcards):
     input_list = [f"{OUT}-report.pdf", f"{OUT}-rulegraph.png"]
     if config['merge'] == 'true':
         input_list += [f"{OUT}.bed"]
-    if config['impute_prep'] == 'true':
-        input_list += expand(f"{{rawdata}}/{{rawdata}}.chr{{chrom}}.vcf.gz", rawdata=QUERY.keys(), chrom=CHROMS)
+    input_list += expand(f"{{rawdata}}/{{rawdata}}.chr{{chrom}}.vcf.gz", rawdata=QUERY.keys(), chrom=CHROMS)
     if config['download_reference'] == 'true':
         input_list += [REFASTA, REFVCF]
     return(input_list)
@@ -122,28 +122,28 @@ rule update_alleles_IDs: # Update chromosome labels, SNP IDs, and alleles
         if params.ids != "none":
             if params.alleles != "none":
                 if params.chrom_ids != "none":
-                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --keep-allele-order --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom {plnk_rsrc(rule, plink_run_specs)}; "
+                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --snps-only 'just-acgt' --keep-allele-order --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom {plnk_rsrc(rule, plink_run_specs)}; "
                           f"{{params.exec}} --bfile {{params.prefix}}.chrom --keep-allele-order --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles {plnk_rsrc(rule, plink_run_specs)}; "
                           f"{{params.exec}} --bfile {{params.prefix}}_alleles --keep-allele-order --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs {plnk_rsrc(rule, plink_run_specs)}")
                 else:
-                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --keep-allele-order --exclude {{params.prefix}}.dups --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles {plnk_rsrc(rule, plink_run_specs)}; "
+                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --snps-only 'just-acgt' --keep-allele-order --exclude {{params.prefix}}.dups --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles {plnk_rsrc(rule, plink_run_specs)}; "
                           f"{{params.exec}} --bfile {{params.prefix}}_alleles --keep-allele-order --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs {plnk_rsrc(rule, plink_run_specs)}")
             elif params.chrom_ids != "none":
-                shell(f"{{params.exec}} --bfile {{params.in_pre}} --keep-allele-order --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom {plnk_rsrc(rule, plink_run_specs)}; "
+                shell(f"{{params.exec}} --bfile {{params.in_pre}} --snps-only 'just-acgt' --keep-allele-order --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom {plnk_rsrc(rule, plink_run_specs)}; "
                       f"{{params.exec}} --bfile {{params.prefix}}.chrom --keep-allele-order --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs {plnk_rsrc(rule, plink_run_specs)}")
             else:
-                shell(f"{{params.exec}} --bfile {{params.in_pre}} --keep-allele-order --exclude {{params.prefix}}.dups --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs {plnk_rsrc(rule, plink_run_specs)}")
+                shell(f"{{params.exec}} --bfile {{params.in_pre}} --snps-only 'just-acgt' --keep-allele-order --exclude {{params.prefix}}.dups --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs {plnk_rsrc(rule, plink_run_specs)}")
         else:
             if params.alleles != "none":
                 if params.chrom_ids != "none":
-                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --keep-allele-order --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom {plnk_rsrc(rule, plink_run_specs)}; "
+                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --snps-only 'just-acgt' --keep-allele-order --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom {plnk_rsrc(rule, plink_run_specs)}; "
                           f"{{params.exec}} --bfile {{params.prefix}}.chrom --keep-allele-order --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles")
                 else:
-                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --keep-allele-order --exclude {{params.prefix}}.dups --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles_IDs {plnk_rsrc(rule, plink_run_specs)}")
+                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --snps-only 'just-acgt' --keep-allele-order --exclude {{params.prefix}}.dups --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles_IDs {plnk_rsrc(rule, plink_run_specs)}")
             elif params.chrom_ids != "none":
-                shell(f"{{params.exec}} --bfile {{params.in_pre}} --keep-allele-order --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}_alleles_IDs {plnk_rsrc(rule, plink_run_specs)}")
+                shell(f"{{params.exec}} --bfile {{params.in_pre}} --snps-only 'just-acgt' --keep-allele-order --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}_alleles_IDs {plnk_rsrc(rule, plink_run_specs)}")
             else:
-                shell(f"{{params.exec}} --keep-allele-order --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --make-bed --out {{params.prefix}}_alleles_IDs {plnk_rsrc(rule, plink_run_specs)}")
+                shell(f"{{params.exec}} --snps-only 'just-acgt' --keep-allele-order --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --make-bed --out {{params.prefix}}_alleles_IDs {plnk_rsrc(rule, plink_run_specs)}")
 
 rule flip_strands:
     input: "{rawdata}/tmp/{rawdata}_alleles_IDs.bed"
