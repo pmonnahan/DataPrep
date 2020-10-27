@@ -29,12 +29,12 @@ if config['singularity']['use_singularity'] == 'true' and config['singularity'][
     if config["CrossMap"]['download_refs'] == "true":
         CROSSCHAIN = f"accessory/{os.path.basename(config['CrossMap']['chain'])}.flt.gz"
         CROSSFASTA = f"accessory/{os.path.basename(config['CrossMap']['fasta']).strip('.gz')}"
-        bind_paths = ",".join(set([os.path.dirname(str(x)) for x in list(QUERY.values())] + [f"{os.getcwd()}/{x}" for x in ['OandE', 'accessory', config['singularity']['code']] + list(QUERY.keys())]))
+        bind_paths = ",".join(set([os.path.dirname(str(x)) for x in list(QUERY.values())] + [f"{os.getcwd()}/{x}" for x in ['OandE', 'accessory', "merged_vcfs", config['singularity']['code']] + list(QUERY.keys())]))
     else:
         CROSSCHAIN = config['CrossMap']['chain']
         CROSSFASTA = config['CrossMap']['fasta']
         assert all(os.path.exists(x) for x in [CROSSFASTA, CROSSCHAIN])
-        bind_paths = ",".join(set([os.path.dirname(str(x)) for x in list(QUERY.values())] + [os.path.dirname(config['CrossMap']['chain']), os.path.dirname(config['CrossMap']['fasta'])] + [f"{os.getcwd()}/{x}" for x in ['OandE', 'accessory', config['singularity']['code']] + list(QUERY.keys())]))
+        bind_paths = ",".join(set([os.path.dirname(str(x)) for x in list(QUERY.values())] + [os.path.dirname(config['CrossMap']['chain']), os.path.dirname(config['CrossMap']['fasta'])] + [f"{os.getcwd()}/{x}" for x in ['OandE', 'accessory', "merged_vcfs", config['singularity']['code']] + list(QUERY.keys())]))
     CMD_PREFIX = f"set +u; {config['singularity']['module']}; singularity exec --bind {bind_paths},{os.getcwd()} {config['singularity']['image']}"
     CMD_PIPE = f"singularity exec --bind {bind_paths},{os.getcwd()} {config['singularity']['image']}"
     CODE = config['singularity']['code']
@@ -46,6 +46,7 @@ else:
 # Make subdirectories
 if not os.path.exists("accessory"): os.mkdir("accessory")
 if not os.path.exists("OandE"): os.mkdir("OandE")
+if not os.path.exists("merged_vcfs"): os.mkdir("merged_vcfs")
 for datset in QUERY.keys():
     if not os.path.exists(datset):
         os.mkdir(datset)
@@ -111,7 +112,7 @@ def plnk_rsrc(rule_name, plink_specs):
 
 rule all:
     #input: get_all_inputs
-    input: expand(f"{OUT}-QC_chr{{chrom}}.bed", chrom=CHROMS), f"{OUT}-report.pdf", f"{OUT}-rulegraph.png", f"accessory/typed_key.txt"
+    input: expand(f"{OUT}-QC_chr{{chrom}}.bed", chrom=CHROMS), f"{OUT}-report.pdf", f"{OUT}-rulegraph.png", f"accessory/typed_key.txt", f"merged_vcfs/{OUT}.dosage.vcf.gz"
 
 rule clean:
     input: expand("{query}",query=QUERY.keys())
@@ -148,30 +149,32 @@ rule download_refs:
 
 rule cross_map:
     input: CROSSFASTA, CROSSCHAIN
-    output: f"{{rawdata}}/{{rawdata}}_hg19_chr{{chrom}}.vcf.gz"
+    output: f"{{rawdata}}/{{rawdata}}_chr{{chrom}}.vcf.gz"
     params:
         in_pre = lambda wildcards: QUERY[wildcards.rawdata],
-        out_pre = f"{{rawdata}}/{{rawdata}}_hg19_chr{{chrom}}.vcf",
+        out_pre = f"{{rawdata}}/{{rawdata}}_chr{{chrom}}.vcf",
         awk_string = """awk \'{if($5!=\".\") print $0}\'"""
     threads: int(config['CrossMap']['threads'])
     run:
         if config['convert_coords'] == 'true':
             shell(f"{CMD_PREFIX} python {config['CrossMap']['exec']} vcf {CROSSCHAIN} {{params.in_pre}}/chr{{wildcards.chrom}}.dose.vcf.gz {CROSSFASTA} {{params.out_pre}}; "
-            f"{CMD_PREFIX} {{params.awk_string}} {{params.out_pre}} | bgzip --threads {{threads}} > {{params.out_pre}}.gz; "
+            f"{CMD_PREFIX} {{params.awk_string}} {{params.out_pre}} | bgzip --threads {{threads}} > {{params.out_pre}}.gz; {CMD_PREFIX} tabix {{params.out_pre}}.gz; "
             f"rm {{params.out_pre}}; {CMD_PREFIX} gzip -f {{params.out_pre}}.unmap")
         else:
-            shell(f"cp {{params.in_pre}}/chr{{wildcards.chrom}}.dose.vcf.gz {{output}}")
+            shell(f"cp {{params.in_pre}}/chr{{wildcards.chrom}}.dose.vcf.gz {{output}}; {CMD_PREFIX} tabix {{params.out_pre}}.gz")
 
 rule typed_key:
-    output: f"accessory/{{rawdata}}_typed_key.txt"
+    output: f"accessory/{{rawdata}}_typed_key.txt", f"accessory/{{rawdata}}_lowImptInfo.txt"
     params:
         in_pre = lambda wildcards: QUERY[wildcards.rawdata],
         awk_string1 = """awk \'{printf(\"%s\\ttyped\\n\", $1)}\'""",
-        awk_string2 = """awk \'{printf(\"%s\\ttypedOnly\\n\", $1)}\'"""
+        awk_string2 = """awk \'{printf(\"%s\\ttypedOnly\\n\", $1)}\'""",
+        awk_string3 = """awk \'{if($7 < """ + config['QC']['Rsq_threshold'] + """ && $4 > """ + config['QC']['maf'] + """) print $1}\'"""
     shell:
         f"{CMD_PREFIX} zgrep Genotyped {{params.in_pre}}/chr*.info.gz | {{params.awk_string1}} | grep -v -f {{params.in_pre}}/typed-only.txt | "
         f"grep -v SNP | cut -d \':\' -f 2- > accessory/{{wildcards.rawdata}}_typed_key.txt || true; "
-        f"{CMD_PREFIX} {{params.awk_string2}} {{params.in_pre}}/typed-only.txt | grep -v Position >> accessory/{{wildcards.rawdata}}_typed_key.txt"
+        f"{CMD_PREFIX} {{params.awk_string2}} {{params.in_pre}}/typed-only.txt | grep -v Position >> accessory/{{wildcards.rawdata}}_typed_key.txt; "
+        f"{CMD_PREFIX} zcat {{params.in_pre}}/chr*.info.gz | {{params.awk_string3}} > accessory/{{wildcards.rawdata}}_lowImptInfo.txt"
 
 rule merge_typed_keys:
     input: expand(f"accessory/{{rawdata}}_typed_key.txt", rawdata=QUERY.keys())
@@ -206,21 +209,53 @@ rule merge_typed_keys:
             shell("rm accessory/typed_key_tmp.txt accessory/typed.vcf accessory/typed_crossmap.vcf")
         else: shell("mv accessory/typed_key_tmp.txt accessory/typed_key.txt")
 
-
 rule convert_vcfs:
-    input: f"{{rawdata}}/{{rawdata}}_hg19_chr{{chrom}}.vcf.gz"
+    input: f"{{rawdata}}/{{rawdata}}_chr{{chrom}}.vcf.gz"
     output: f"{{rawdata}}/{{rawdata}}_raw{{chrom}}.bed"
     shell:
         f"{CMD_PREFIX} plink --vcf {{input}} --const-fid 0 --keep-allele-order --vcf-min-gp {config['min_gp']} "
         f"--make-bed --out {{wildcards.rawdata}}/{{wildcards.rawdata}}_raw{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}"
 
+rule impt_info_filter:
+    input: f"{{rawdata}}/{{rawdata}}_raw{{chrom}}.bed", f"accessory/{{rawdata}}_lowImptInfo.txt"
+    output: f"{{rawdata}}/{{rawdata}}_info{{chrom}}.bed"
+    shell: f"{CMD_PREFIX} plink --bfile {{wildcards.rawdata}}/{{wildcards.rawdata}}_raw{{wildcards.chrom}} --exclude accessory/{{wildcards.rawdata}}_lowImptInfo.txt "
+            f"--make-bed --out {{wildcards.rawdata}}/{{wildcards.rawdata}}_info{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}"
+
+rule merge_info:
+    input: expand(f"accessory/{{rawdata}}_lowImptInfo.txt", rawdata=QUERY.keys())
+    output: f"accessory/lowImptInfo.txt", f"merged_vcfs/lowImptInfo.txt"
+    shell: f"{CMD_PREFIX} sh -c 'cat accessory/*_lowImptInfo.txt | sort | uniq > accessory/lowImptInfo.txt'; "
+            f"{CMD_PREFIX} cut -d ':' -f 1,2 accessory/lowImptInfo.txt | tr ':' '\\t' > merged_vcfs/lowImptInfo.txt"
+
+rule merge_vcfs:  #This will maintain original SNP ids produced by imputation.  If converting coords, this will produce snpIDs that are out of sync with coords.
+    input: expand("{rawdata}/{rawdata}_chr{{chrom}}.vcf.gz", rawdata=QUERY.keys()), f"merged_vcfs/lowImptInfo.txt"
+    output: f"merged_vcfs/{OUT}_chr{{chrom}}.vcf.gz"
+    run:
+        with open(f"merged_vcfs/chr{wildcards.chrom}.txt", 'w') as mfile:
+            for file in input[:-1]:
+                mfile.write(f"{file}\n")
+        with open(f"merged_vcfs/chr{wildcards.chrom}.sh", 'w') as shfile:
+            shfile.write(f"bcftools merge -l merged_vcfs/chr{wildcards.chrom}.txt | bcftools filter -e 'MAF[0]<{config['QC']['maf']}' "
+                         f"-T ^merged_vcfs/lowImptInfo.txt -Oz -o merged_vcfs/{OUT}_chr{wildcards.chrom}.vcf.gz")
+        shell(f"{CMD_PREFIX} sh merged_vcfs/chr{{wildcards.chrom}}.sh")
+
+rule concat_vcfs:
+    input: expand(f"merged_vcfs/{OUT}_chr{{chrom}}.vcf.gz", chrom=CHROMS)
+    output: f"merged_vcfs/{OUT}.dosage.vcf.gz"
+    run:
+        with open("merged_vcfs/concat.list", 'w') as clist:
+            for file in input: clist.write(f"{file}\n")
+
+        shell(f"{CMD_PREFIX} sh -c 'bcftools concat -f merged_vcfs/concat.list | bcftools sort | bgzip > merged_vcfs/{OUT}.dosage.vcf.gz'; {CMD_PREFIX} tabix merged_vcfs/{OUT}.dosage.vcf.gz"
+
 rule update_varIDs_and_sex:
-    input: "{rawdata}/{rawdata}_raw{chrom}.bed"
+    input: "{rawdata}/{rawdata}_info{chrom}.bed"
     output: "{rawdata}/{rawdata}-varIDs_chr{chrom}.bed"
     params: sex_dat = config['phenotype_data']['sex_file']
     shell: """
-    {CMD_PREFIX} awk '{{printf("%s\\t%s:%s\\n",$2,$1,$4)}}' {wildcards.rawdata}/{wildcards.rawdata}_raw{wildcards.chrom}.bim > {wildcards.rawdata}/{wildcards.rawdata}_raw{wildcards.chrom}_varIDs.txt; 
-    {CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}_raw{wildcards.chrom} --keep-allele-order --update-name {wildcards.rawdata}/{wildcards.rawdata}_raw{wildcards.chrom}_varIDs.txt --update-sex accessory/sex.txt --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-varIDs_chr{wildcards.chrom} """ + f"{plnk_rsrc(rule, plink_run_specs)}"
+    {CMD_PREFIX} awk '{{printf("%s\\t%s:%s\\n",$2,$1,$4)}}' {wildcards.rawdata}/{wildcards.rawdata}_info{wildcards.chrom}.bim > {wildcards.rawdata}/{wildcards.rawdata}_info{wildcards.chrom}_varIDs.txt; 
+    {CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}_info{wildcards.chrom} --keep-allele-order --update-name {wildcards.rawdata}/{wildcards.rawdata}_info{wildcards.chrom}_varIDs.txt --update-sex accessory/sex.txt --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-varIDs_chr{wildcards.chrom} """ + f"{plnk_rsrc(rule, plink_run_specs)}"
 
 rule QCcombine_query:
     input: "{rawdata}/{rawdata}-varIDs_chr{chrom}.bed"
@@ -235,16 +270,16 @@ rule QCcombine_query:
                 cmd = f"{CMD_PREFIX} {PYTHON} {CODE}/QC.py -i {{params.pre1}} -d {{wildcards.rawdata}} -o {{wildcards.rawdata}}-QC_chr{{wildcards.chrom}} " \
                       f"-p plink -tvm1 {{params.tvm1}} -tgm {{params.tgm}} -tvm2 {{params.tvm2}} -hwe {{params.hwe}} -mbs {{params.mbs}} -maf -9  -r '{plnk_rsrc(rule, plink_run_specs)}' --snps_only; " \
                       f"mv {{params.pre2}}.geno* {{wildcards.rawdata}}/tmp; mv {{params.pre2}}.var* {{wildcards.rawdata}}/tmp"
-                if config['delete_intermediates'] == 'true': cmd += f"rm -r {{wildcards.rawdata}}/tmp/"
+                #if config['delete_intermediates'] == 'true': cmd += f"rm -r {{wildcards.rawdata}}/tmp/"
             shell(cmd)
         else: shell(f"{CMD_PREFIX} plink --bfile {{params.pre1}} --make-bed --out {{params.pre1}}-QC")
-        if config['delete_intermediates'] == 'true': shell(f"rm {{wildcards.rawdata}}/{{wildcards.rawdata}}_raw{{wildcards.chrom}}*; {{wildcards.rawdata}}/{{wildcards.rawdata}}-varIDs_chr{{wildcards.chrom}}*")
+        if config['delete_intermediates'] == 'true': shell(f"rm {{wildcards.rawdata}}/{{wildcards.rawdata}}_raw{{wildcards.chrom}}*; rm {{wildcards.rawdata}}/{{wildcards.rawdata}}_info{{wildcards.chrom}}*; rm {{wildcards.rawdata}}/{{wildcards.rawdata}}-varIDs_chr{{wildcards.chrom}}*")
 
 rule restore_strand:
     input: "{rawdata}/{rawdata}-QC_chr{chrom}.bed"
     output: "{rawdata}/{rawdata}-QC-Ref_chr{chrom}.bed"
     params:
-        bim_file = "{rawdata}/{rawdata}_raw{chrom}.bim"
+        bim_file = "{rawdata}/{rawdata}_info{chrom}.bim"
     shell:
         f"{CMD_PREFIX} plink --bfile {{wildcards.rawdata}}/{{wildcards.rawdata}}-QC_chr{{wildcards.chrom}} --make-bed "
         f"--a2-allele {{params.bim_file}} 6 2 --out {{wildcards.rawdata}}/{{wildcards.rawdata}}-QC-Ref_chr{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}"
