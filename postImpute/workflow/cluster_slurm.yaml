@@ -8,7 +8,7 @@ __default__:
   ntasks: "1"
   nodes: "1"
   mail-user: "pmonnaha@umn.edu"
-  mail-type: "NONE"
+  mail-type: "FAIL"
   o: 'OandE/{rule}.{wildcards}.out'
   e: 'OandE/{rule}.{wildcards}.err'
 
@@ -30,10 +30,27 @@ convert_vcfs:
   ntasks: "1"
   nodes: "1"
 
-merge_vcfs:
+convert_dosage:
+  time: '48:00:00'
+  mem-per-cpu: '16G'
+  ntasks: "1"
+  nodes: "1"
+
+filter_dosage:
+  time: '24:00:00'
+  mem-per-cpu: '16G'
+  ntasks: "1"
+  nodes: "1"
+
+merge_dosage:
   time: '48:00:00'
   mem-per-cpu: '32G'
   ntasks: "1"
+  nodes: "1"
+
+merge_vcfs:
+  time: '48:00:00'
+  mem-per-cpu: '32G'
   nodes: "1"
 
 merge_inputs:

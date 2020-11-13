@@ -58,17 +58,18 @@ if CHROMS == 'all':
     if config['include_x'] == 'yes': CHROMS.append('X')
 
 # Look for sex and phenotype files that will be used by plink to update these fields for imputed data and create them if they don't exist
-if not os.path.exists("accessory/sex.txt"):
-    if config['phenotype_data']['sex_file'] != "none":
-        shell(f"sed \'s/^/0\t/\' {config['phenotype_data']['sex_file']} > accessory/sex.txt")
-    else: shell("touch accessory/sex.txt")
-if not os.path.exists("accessory/pheno_file.txt"):
-    if config['phenotype_data']['pheno_file'] != "none":
-        shell(f"sed \'s/^/0\t/\' {config['phenotype_data']['pheno_file']} > accessory/pheno_file.txt")
-    else: shell("touch accessory/pheno_file.txt")
+# if not os.path.exists("accessory/sex.txt"):
+if config['phenotype_data']['sex_file'] != "none":
+    shell(f"sed \'s/^/0\t/\' {config['phenotype_data']['sex_file']} > accessory/sex.txt")
+else: shell("touch accessory/sex.txt")
+# if not os.path.exists("accessory/pheno_file.txt"):
+if config['phenotype_data']['pheno_file'] != "none":
+    shell(f"sed \'s/^/0\t/\' {config['phenotype_data']['pheno_file']} > accessory/pheno_file.txt")
+else: shell("touch accessory/pheno_file.txt")
 
 # Run locally or submit to cluster depending on config.yml
 plink_run_specs = {'__default__': ""} # Set default to empty string in case of local run.  i.e. default to plink's auto-detection of resources
+plink_rules = ['__default__',"merge_inputs","convert_vcfs","QCcombine_query","restore_strand","set_pheno","filter_merged","update_varIDs_and_sex"]
 if config['run_settings']['local_run'] == 'true':
     localrules: all, update_alleles_IDs, FixRef, QCcombine_query, download_refs, merge_typed_keys
 else:
@@ -77,9 +78,9 @@ else:
     assert os.path.exists(config['run_settings']['cluster_config']), print(f"\nMust provide a cluster configuration file under run_settings -> cluster_config in the config.yml file\nFile \'{config['run_settings']['cluster_config']}\' does not exist\n")
     clusterfile = yaml.load(open(config['run_settings']['cluster_config']), Loader=yaml.FullLoader)
     for rule in clusterfile.keys(): # Purpose of this code is to make sure plink requests same amount of memory/threads as specified in cluster.yaml file
-        if config['run_settings']['scheduler'] == 'slurm': plink_run_specs[rule] = f"--memory {int(clusterfile[rule]['mem-per-cpu'].replace('G','000')) * int(clusterfile[rule]['ntasks'])} --threads {clusterfile[rule]['ntasks']}"
-        elif config['run_settings']['scheduler'] == 'pbs':  plink_run_specs[rule] = f"--memory {clusterfile[rule]['mem'].replace('b','').replace('m','').replace('g','000')} --threads 1"
-
+        if rule in plink_rules:
+            if config['run_settings']['scheduler'] == 'slurm': plink_run_specs[rule] = f"--memory {int(clusterfile[rule]['mem-per-cpu'].replace('G','000')) * int(clusterfile[rule]['ntasks'])} --threads {clusterfile[rule]['ntasks']}"
+            elif config['run_settings']['scheduler'] == 'pbs':  plink_run_specs[rule] = f"--memory {clusterfile[rule]['mem'].replace('b','').replace('m','').replace('g','000')} --threads 1"
 
 # Conditionally set expected outputs of various steps depending on flags in config.yml
 def get_all_inputs(wildcards):
@@ -216,6 +217,13 @@ rule convert_vcfs:
         f"{CMD_PREFIX} plink --vcf {{input}} --const-fid 0 --keep-allele-order --vcf-min-gp {config['min_gp']} "
         f"--make-bed --out {{wildcards.rawdata}}/{{wildcards.rawdata}}_raw{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}"
 
+rule convert_dosage:
+    input: f"{{rawdata}}/{{rawdata}}_chr{{chrom}}.vcf.gz"
+    output: f"{{rawdata}}/{{rawdata}}_dos{{chrom}}.pgen"
+    shell:
+        f"{CMD_PREFIX} plink2 --vcf {{input}} dosage=HDS --const-fid 0 "
+        f"--make-pgen --out {{wildcards.rawdata}}/{{wildcards.rawdata}}_dos{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}"
+
 rule impt_info_filter:
     input: f"{{rawdata}}/{{rawdata}}_raw{{chrom}}.bed", f"accessory/{{rawdata}}_lowImptInfo.txt"
     output: f"{{rawdata}}/{{rawdata}}_info{{chrom}}.bed"
@@ -231,32 +239,30 @@ rule merge_info:
 rule merge_vcfs:  #This will maintain original SNP ids produced by imputation.  If converting coords, this will produce snpIDs that are out of sync with coords.
     input: expand("{rawdata}/{rawdata}_chr{{chrom}}.vcf.gz", rawdata=QUERY.keys()), f"merged_vcfs/lowImptInfo.txt"
     output: f"merged_vcfs/{OUT}_chr{{chrom}}.vcf.gz"
+    threads: int(config['bcftools']['threads'])
     run:
         with open(f"merged_vcfs/chr{wildcards.chrom}.txt", 'w') as mfile:
             for file in input[:-1]:
                 mfile.write(f"{file}\n")
         with open(f"merged_vcfs/chr{wildcards.chrom}.sh", 'w') as shfile:
             shfile.write(f"bcftools merge -l merged_vcfs/chr{wildcards.chrom}.txt | bcftools filter -e 'MAF[0]<{config['QC']['maf']}' "
-                         f"-T ^merged_vcfs/lowImptInfo.txt -Oz -o merged_vcfs/{OUT}_chr{wildcards.chrom}.vcf.gz")
+                         f"-T ^merged_vcfs/lowImptInfo.txt -Oz -o merged_vcfs/{OUT}_chr{wildcards.chrom}.vcf.gz --threads {threads}; "
+                         f"tabix merged_vcfs/{OUT}_chr{wildcards.chrom}.vcf.gz")
         shell(f"{CMD_PREFIX} sh merged_vcfs/chr{{wildcards.chrom}}.sh")
 
-rule concat_vcfs:
-    input: expand(f"merged_vcfs/{OUT}_chr{{chrom}}.vcf.gz", chrom=CHROMS)
-    output: f"merged_vcfs/{OUT}.dosage.vcf.gz"
-    run:
-        with open("merged_vcfs/concat.list", 'w') as clist:
-            for file in input: clist.write(f"{file}\n")
-
-        shell(f"{CMD_PREFIX} sh -c 'bcftools concat -f merged_vcfs/concat.list | bcftools sort | bgzip > merged_vcfs/{OUT}.dosage.vcf.gz'; {CMD_PREFIX} tabix merged_vcfs/{OUT}.dosage.vcf.gz"
-
-rule update_varIDs_and_sex:
+rule update_IDs_sex_pheno:
     input: "{rawdata}/{rawdata}_info{chrom}.bed"
     output: "{rawdata}/{rawdata}-varIDs_chr{chrom}.bed"
-    params: sex_dat = config['phenotype_data']['sex_file']
     shell: """
     {CMD_PREFIX} awk '{{printf("%s\\t%s:%s\\n",$2,$1,$4)}}' {wildcards.rawdata}/{wildcards.rawdata}_info{wildcards.chrom}.bim > {wildcards.rawdata}/{wildcards.rawdata}_info{wildcards.chrom}_varIDs.txt; 
-    {CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}_info{wildcards.chrom} --keep-allele-order --update-name {wildcards.rawdata}/{wildcards.rawdata}_info{wildcards.chrom}_varIDs.txt --update-sex accessory/sex.txt --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-varIDs_chr{wildcards.chrom} """ + f"{plnk_rsrc(rule, plink_run_specs)}"
+    {CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}_info{wildcards.chrom} --keep-allele-order 
+    --update-name {wildcards.rawdata}/{wildcards.rawdata}_info{wildcards.chrom}_varIDs.txt --update-sex accessory/sex.txt 
+    --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-varIDs_chr{wildcards.chrom};""" + f"{plnk_rsrc(rule, plink_run_specs)};" + """
+    {CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom} --pheno accessory/pheno_file.txt 
+    --keep-allele-order --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-pheno_chr{wildcards.chrom} {plnk_rsrc(rule, plink_run_specs)}
+    """ + f"{plnk_rsrc(rule, plink_run_specs)}"
 
+#TODO add mbc test in here now that we've moved phenotype addition above
 rule QCcombine_query:
     input: "{rawdata}/{rawdata}-varIDs_chr{chrom}.bed"
     output: "{rawdata}/{rawdata}-QC_chr{chrom}.bed"
@@ -284,26 +290,8 @@ rule restore_strand:
         f"{CMD_PREFIX} plink --bfile {{wildcards.rawdata}}/{{wildcards.rawdata}}-QC_chr{{wildcards.chrom}} --make-bed "
         f"--a2-allele {{params.bim_file}} 6 2 --out {{wildcards.rawdata}}/{{wildcards.rawdata}}-QC-Ref_chr{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}"
 
-rule set_pheno:
-    input: "{rawdata}/{rawdata}-QC-Ref_chr{chrom}.bed"
-    output: "{rawdata}/.{rawdata}-PhenoFixed_chr{chrom}"
-    params: pheno_dat = config['phenotype_data']['pheno_file']
-    run:
-        if os.path.exists(params.pheno_dat):
-            shell(f"{CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom} --pheno accessory/pheno_file.txt --keep-allele-order --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-pheno_chr{wildcards.chrom} {plnk_rsrc(rule, plink_run_specs)};"
-                  "mv {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-pheno_chr{wildcards.chrom}.bed {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}.bed; "
-                  "mv {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-pheno_chr{wildcards.chrom}.bim {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}.bim; "
-                  "mv {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-pheno_chr{wildcards.chrom}.fam {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}.fam; "
-                  "touch {output}")
-        elif f"{wildcards.rawdata}" in config['phenotype_data']['case_datasets'].strip().split(","):
-            shell("{CMD_PREFIX} sed -i 's/-9$/2/' {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}.fam; touch {output}")
-        elif f"{wildcards.rawdata}" in config['phenotype_data']['control_datasets'].strip().split(","):
-            shell("{CMD_PREFIX} sed -i 's/-9$/1/' {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom}.fam; touch {output}")
-        else:
-            shell("touch {output}")
-
 rule merge_inputs:
-    input: expand("{rawdata}/{rawdata}-QC-Ref_chr{{chrom}}.bed", rawdata=QUERY.keys()), expand("{rawdata}/.{rawdata}-PhenoFixed_chr{{chrom}}", rawdata=QUERY.keys())
+    input: expand("{rawdata}/{rawdata}-QC-Ref_chr{{chrom}}.bed", rawdata=QUERY.keys())
     output: f"{OUT}_chr{{chrom}}.bed"
     params:
         input_list = ",".join([f"{x}/{x}-QC-Ref_chr{{chrom}}" for x in QUERY.keys()])
@@ -319,8 +307,64 @@ rule merge_inputs:
 
 rule filter_merged:
     input: f"{OUT}_chr{{chrom}}.bed"
-    output: f"{OUT}-QC_chr{{chrom}}.bed"
+    output: f"{OUT}-QC_chr{{chrom}}.bed", f"{OUT}-QC_chr{{chrom}}.bim"
     shell: f"{CMD_PREFIX} plink --bfile {OUT}_chr{{wildcards.chrom}} --maf {config['QC']['maf']} --keep-allele-order --make-bed --out {OUT}-QC_chr{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}"
+
+rule filter_dosage:
+    input: f"{{rawdata}}/{{rawdata}}_dos{{chrom}}.pgen", f"{OUT}-QC_chr{{chrom}}.bim"
+    output: f"{{rawdata}}/{{rawdata}}_QCdos{{chrom}}.pgen", f"{{rawdata}}/{{rawdata}}_QCdos{{chrom}}.vcf.gz"
+    shell: f"cut -f 2 {OUT}-QC_chr{{wildcards.chrom}}.bim > accessory/snps.dos.{{wildcards.chrom}};"
+            f"{CMD_PREFIX} plink2 --pfile {{wildcards.rawdata}}/{{wildcards.rawdata}}_dos{{wildcards.chrom}} "
+            f"--extract accessory/snps.dos.{{wildcards.chrom}} --set-all-var-ids @:# --update-sex accessory/sex.txt --pheno accessory/pheno_file.txt --make-pgen "
+            f"--out {{wildcards.rawdata}}/{{wildcards.rawdata}}_QCdos{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}; "
+            f"{CMD_PREFIX} plink2 --pfile {{wildcards.rawdata}}/{{wildcards.rawdata}}_QCdos{{wildcards.chrom}} --export vcf vcf-dosage=HDS-force --out {{wildcards.rawdata}}/{{wildcards.rawdata}}_QCdos{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)};"
+            f"{CMD_PREFIX} bgzip {{wildcards.rawdata}}/{{wildcards.rawdata}}_QCdos{{wildcards.chrom}}.vcf; "
+            f"{CMD_PREFIX} tabix {{wildcards.rawdata}}/{{wildcards.rawdata}}_QCdos{{wildcards.chrom}}.vcf.gz"
+            # f"{CMD_PREFIX} plink2 --pfile {{wildcards.rawdata}}/{{wildcards.rawdata}}_QCdos{{wildcards.chrom}} "
+            # f"--pheno accessory/pheno_file.txt --make-pgen "
+            # f"--out {{wildcards.rawdata}}/{{wildcards.rawdata}}-3dos{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}"
+
+#TODO add temp dir to sort
+rule merge_dosage:
+    input: expand("{rawdata}/{rawdata}_QCdos{{chrom}}.vcf.gz", rawdata=QUERY.keys()), f"{OUT}-QC_chr{{chrom}}.bim"
+    output: f"merged_vcfs/{OUT}.{{chrom}}.QC.vcf.gz"
+    run:
+        with open(f"accessory/dosage.{wildcards.chrom}.merge.list", 'w') as mlist:
+            for dat in QUERY.keys():
+                mlist.write(f"{dat}/{dat}_QCdos{wildcards.chrom}.vcf.gz\n")
+        if not os.path.exists(f"{OUT}_chr{wildcards.chrom}"): os.mkdir(f"{OUT}_chr{wildcards.chrom}")
+        # shell(f"cut -f 2 {OUT}-QC_chr{{wildcards.chrom}}.bim > accessory/snps.dos.{{wildcards.chrom}}; {CMD_PREFIX} plink2 --merge-list accessory/dosage.{{wildcards.chrom}}.merge.list "
+        #       f"--extract accessory/snps.dos.{{wildcards.chrom}} --make-pgen --out {OUT}_chr{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)};"
+        shell(f"{CMD_PREFIX} bcftools merge -l accessory/dosage.{{wildcards.chrom}}.merge.list -Oz -o merged_vcfs/{OUT}.{{wildcards.chrom}}.usort.QC.vcf.gz;"
+              f"{CMD_PREFIX} tabix merged_vcfs/{OUT}.{{wildcards.chrom}}.usort.QC.vcf.gz; "
+              f"{CMD_PREFIX} bcftools sort merged_vcfs/{OUT}.{{wildcards.chrom}}.usort.QC.vcf.gz --temp-dir {OUT}_chr{{wildcards.chrom}} -Oz -o merged_vcfs/{OUT}.{{wildcards.chrom}}.QC.vcf.gz;"
+              f"{CMD_PREFIX} tabix merged_vcfs/{OUT}.{{wildcards.chrom}}.QC.vcf.gz;"
+              f"rm -r {OUT}_chr{{wildcards.chrom}}")
+
+# rule filter_vcf:
+#     input: f"merged_vcfs/{OUT}_chr{{chrom}}.vcf.gz", f"{OUT}-QC_chr{{chrom}}.bim"
+#     output: f"merged_vcfs/{OUT}.{{chrom}}.QC.vcf.gz"
+#     run:
+#         if config['convert_coords'] == 'true':
+#             cmd = f"cut -f 2 {{input[1]}} | sed 's/:/\t/' > accessory/snps.{{wildcards.chrom}}.list; mkdir {OUT}_chr{{wildcards.chrom}}; " \
+#                   f"{CMD_PREFIX} sh -c 'bcftools sort {{input[0]}} --temp-dir {OUT}_chr{{wildcards.chrom}} -Oz -o {OUT}_chr{{wildcards.chrom}}.merged.vcf.gz; bcftools view -R accessory/snps.{{wildcards.chrom}}.list -Oz -o {{output}} {OUT}_chr{{wildcards.chrom}}.merged.vcf.gz' ;" \
+#                   f"rm -r {OUT}_chr{{wildcards.chrom}}"
+#         else:
+#             cmd = f"cut -f 2 {{input[1]}} | sed 's/:/\t/' | sed 's/^/chr/' > accessory/snps.{{wildcards.chrom}}.list; mkdir {OUT}_chr{{wildcards.chrom}}; " \
+#                   f"{CMD_PREFIX} sh -c 'bcftools sort {{input[0]}} --temp-dir {OUT}_chr{{wildcards.chrom}} -Oz -o {OUT}_chr{{wildcards.chrom}}.merged.vcf.gz; bcftools view -R accessory/snps.{{wildcards.chrom}}.list -Oz -o {{output}} {OUT}_chr{{wildcards.chrom}}.merged.vcf.gz' ;" \
+#                   f"rm -r {OUT}_chr{{wildcards.chrom}}"
+#         cmd += f"{CMD_PREFIX} tabix {{output}}"
+#         shell(cmd)
+
+rule concat_vcfs:
+    input: expand(f"merged_vcfs/{OUT}.{{chrom}}.QC.vcf.gz", chrom=CHROMS)
+    # input: f"{OUT}_dos{{chrom}}.pgen"
+    output: f"merged_vcfs/{OUT}.dosage.vcf.gz"
+    run:
+        with open("merged_vcfs/concat.list", 'w') as clist:
+            for file in input: clist.write(f"{file}\n")
+        shell(f"{CMD_PREFIX} sh -c 'bcftools concat -f merged_vcfs/concat.list | bcftools sort --temp-dir {os.getcwd()} -Oz -o {{output}}';"
+              f" {CMD_PREFIX} tabix {{output}}")
 
 rule make_report:
     input: expand(f"{OUT}-QC_chr{{chrom}}.bed", chrom=CHROMS), f"{OUT}-rulegraph.png"
