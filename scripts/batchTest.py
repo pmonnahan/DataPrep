@@ -58,11 +58,14 @@ def batchTest(snp_array, alternative, hybrid, midP_method, simulate_pval, replic
     res = FisherExact.fisher_exact(snp_array, alternative, hybrid, midP_method, simulate_pval, replicates)
     return(res)
 
-def wrapTest(genofreq_path, threads, names=["SNP", "AA", "AB", "BB"], sep=r"\s+", batchSize=100, reps = 2000):
+def wrapTest(genofreq_path, threads, names=["SNP", "AA", "AB", "BB"], sep=r"\s+", batchSize=100, reps = 2000, quickprint=False, threshold = 0.005):
     SNP = {}
     arg_list = []
     ids = []
     batches = 0
+    if quickprint:
+        pfile = open(genofreq_path.replace("genofreqs","pvals"), 'w')
+        efile = open(f"{genofreq_path}.exclude", 'w')
     if os.path.exists(genofreq_path):
         Data = pd.read_csv(genofreq_path, names=names, sep=sep)
         for snp in set(Data.SNP):
@@ -77,7 +80,12 @@ def wrapTest(genofreq_path, threads, names=["SNP", "AA", "AB", "BB"], sep=r"\s+"
                 res = pool.starmap(batchTest, arg_list)
                 pool.close()
                 pool.join()
-                for var, pval in zip(ids, res): SNP[var] = pval
+                if quickprint:
+                    for var, pval in zip(ids, res):
+                        pfile.write(f"{var}\t{pval}\n")
+                        if pval < threshold: efile.write(f"{var}\n")
+                else:
+                    for var, pval in zip(ids, res): SNP[var] = pval
                 arg_list = []
                 ids = []
                 batches += 1
@@ -87,7 +95,14 @@ def wrapTest(genofreq_path, threads, names=["SNP", "AA", "AB", "BB"], sep=r"\s+"
             res = pool.starmap(batchTest, arg_list)
             pool.close()
             pool.join()
-            for var, pval in zip(ids, res): SNP[var] = pval
+            if quickprint:
+                for var, pval in zip(ids, res):
+                    pfile.write(f"{var}\t{pval}\n")
+                    if pval < threshold: efile.write(f"{var}\n")
+                pfile.close()
+                efile.close()
+            else:
+                for var, pval in zip(ids, res): SNP[var] = pval
     return(SNP)
 
 
@@ -102,6 +117,7 @@ if __name__ == "__main__":
     parser.add_argument('-r', type=str, metavar='resource_string', default='--memory 8000 --threads 1',
                         help='string to be used to specify resources for plink. e.g. --memory 8000 --threads 1')
     parser.add_argument('-o', type=str, metavar='output_directory', default="", help='')
+    parser.add_argument('-q', action="store_true", help='print results as they are generated')
     parser.add_argument('-c', type=int, metavar='threads', default=1, help='')
     args = parser.parse_args()
 
@@ -112,18 +128,27 @@ plink_file = args.i
 plink = args.p
 rsrc_str = args.r
 out = args.o
+if args.q: quickprint = True
+else: quickprint = False
+
+if not os.path.exists(args.o): os.mkdir(args.o)
 
 o1, e1 = wrap_freq(Dat, plink_file, min_ind, out, plink, rsrc_str, args.c)
+
+#TODO write separate function (or a quick print option) that prints to file as tests complete.  No reason to store the results the whole time.
 
 if not e1:
     for pheno in ['case', 'ctrl']:
         # for group in set(Dat.Group):
         for group in ["Black"]:
             genofreq_path = f"{out}/{group}.{pheno}.genofreqs"
-            Results = wrapTest(genofreq_path, args.c)
-            with open(f"{out}/{group}.{pheno}.batchTest.exclude", 'w') as exclude:
-                for snp, pval in Results.items():
-                    if pval < threshold: exclude.write(f"{snp}\n")
+            Results = wrapTest(genofreq_path, args.c, quickprint=quickprint, threshold=threshold)
+            if not quickprint:
+                with open(f"{out}/{group}.{pheno}.pvals", 'w') as pfile:
+                    with open(f"{out}/{group}.{pheno}.batchTest.exclude", 'w') as exclude:
+                        for snp, pval in Results.items():
+                            pfile.write(f"{snp}\t{pval}\n")
+                            if pval < threshold: exclude.write(f"{snp}\n")
 else:
     print("Calculation of genotype frequencies failed")
 
