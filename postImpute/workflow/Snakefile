@@ -26,15 +26,19 @@ PYTHON = config['python']
 #TODO: Add check that the scripts directory is findable
 # Format commands and bind paths if using singularity.
 if config['singularity']['use_singularity'] == 'true' and config['singularity']['image'] != "none":
-    if config["CrossMap"]['download_refs'] == "true":
-        CROSSCHAIN = f"accessory/{os.path.basename(config['CrossMap']['chain'])}.flt.gz"
-        CROSSFASTA = f"accessory/{os.path.basename(config['CrossMap']['fasta']).strip('.gz')}"
-        bind_paths = ",".join(set([os.path.dirname(str(x)) for x in list(QUERY.values())] + [f"{os.getcwd()}/{x}" for x in ['OandE', 'accessory', "merged_vcfs", config['singularity']['code']] + list(QUERY.keys())]))
+    bind_paths = ",".join(set([os.path.dirname(str(x)) for x in list(QUERY.values())] + [f"{os.getcwd()}/{x}" for x in ['OandE', 'accessory', "merged_vcfs", config['singularity']['code']] + list(QUERY.keys())]))
+    if config['convert_coords'] == "true":
+        if config["CrossMap"]['download_refs'] == "true":
+            CROSSCHAIN = f"accessory/{os.path.basename(config['CrossMap']['chain'])}.flt.gz"
+            CROSSFASTA = f"accessory/{os.path.basename(config['CrossMap']['fasta']).strip('.gz')}"
+        else:
+            CROSSCHAIN = config['CrossMap']['chain']
+            CROSSFASTA = config['CrossMap']['fasta']
+            assert all(os.path.exists(x) for x in [CROSSFASTA, CROSSCHAIN])
+            bind_paths += [os.path.dirname(config['CrossMap']['chain']), os.path.dirname(config['CrossMap']['fasta'])]
     else:
-        CROSSCHAIN = config['CrossMap']['chain']
-        CROSSFASTA = config['CrossMap']['fasta']
-        assert all(os.path.exists(x) for x in [CROSSFASTA, CROSSCHAIN])
-        bind_paths = ",".join(set([os.path.dirname(str(x)) for x in list(QUERY.values())] + [os.path.dirname(config['CrossMap']['chain']), os.path.dirname(config['CrossMap']['fasta'])] + [f"{os.getcwd()}/{x}" for x in ['OandE', 'accessory', "merged_vcfs", config['singularity']['code']] + list(QUERY.keys())]))
+        CROSSCHAIN = "accessory/.crosschain"
+        CROSSFASTA = "accessory/.crossfasta"
     CMD_PREFIX = f"set +u; {config['singularity']['module']}; singularity exec --bind {bind_paths},{os.getcwd()} {config['singularity']['image']}"
     CMD_PIPE = f"singularity exec --bind {bind_paths},{os.getcwd()} {config['singularity']['image']}"
     CODE = config['singularity']['code']
@@ -48,9 +52,8 @@ if not os.path.exists("accessory"): os.mkdir("accessory")
 if not os.path.exists("OandE"): os.mkdir("OandE")
 if not os.path.exists("merged_vcfs"): os.mkdir("merged_vcfs")
 for datset in QUERY.keys():
-    if not os.path.exists(datset):
-        os.mkdir(datset)
-        os.mkdir(f"{datset}/tmp")
+    if not os.path.exists(datset): os.mkdir(datset)
+    if not os.path.exists(f"{datset}/tmp"): os.mkdir(f"{datset}/tmp")
 
 CHROMS = config['chroms']
 if CHROMS == 'all':
@@ -79,7 +82,7 @@ else:
     clusterfile = yaml.load(open(config['run_settings']['cluster_config']), Loader=yaml.FullLoader)
     for rule in clusterfile.keys(): # Purpose of this code is to make sure plink requests same amount of memory/threads as specified in cluster.yaml file
         if rule in plink_rules:
-            if config['run_settings']['scheduler'] == 'slurm': plink_run_specs[rule] = f"--memory {int(clusterfile[rule]['mem-per-cpu'].replace('G','000')) * int(clusterfile[rule]['ntasks'])} --threads {clusterfile[rule]['ntasks']}"
+            if config['run_settings']['scheduler'] == 'slurm': plink_run_specs[rule] = f"--memory {int(clusterfile[rule]['mem'].replace('G','000'))} --threads {clusterfile[rule]['ntasks']}"
             elif config['run_settings']['scheduler'] == 'pbs':  plink_run_specs[rule] = f"--memory {clusterfile[rule]['mem'].replace('b','').replace('m','').replace('g','000')} --threads 1"
 
 # Conditionally set expected outputs of various steps depending on flags in config.yml
@@ -127,26 +130,29 @@ rule download_refs:
     output: CROSSCHAIN, CROSSFASTA
     params: chrom_list = [f"chr{x}" for x in CHROMS] + CHROMS # This list filters chain file to remove additional chromosomes that throw issues in crossmap
     run:
-        if os.path.exists(f"accessory/{os.path.basename(config['CrossMap']['chain'])}"): os.remove(f"accessory/{os.path.basename(config['CrossMap']['chain'])}")
-        if os.path.exists(f"accessory/{os.path.basename(config['CrossMap']['fasta'])}"): os.remove(f"accessory/{os.path.basename(config['CrossMap']['fasta'])}")
-        shell(f"wget -P accessory/ {config['CrossMap']['fasta']}; wget -P accessory/ {config['CrossMap']['chain']}")
-        if config['CrossMap']['fasta'].endswith(".gz"): shell(f"gunzip -f accessory/{os.path.basename(config['CrossMap']['fasta'])}")
-        if config['CrossMap']['chain'].endswith(".gz"): shell(f"gunzip -f accessory/{os.path.basename(config['CrossMap']['chain'])}")
-        new_chain = open(f"accessory/{os.path.basename(config['CrossMap']['chain'])}.flt", 'w')
-        with open(f"accessory/{os.path.basename(config['CrossMap']['chain'])}".strip(".gz"), 'r') as chain_file:
-            printing = False
-            for line in chain_file:
-                line0 = line.split()
-                if len(line0) > 3:
-                    if line0[2] in params.chrom_list and line0[7] in params.chrom_list: # This checks that both chromosomes in the chain file exist in the expected set of chromosomes.  and or?
-                        printing = True
-                        new_chain.write(line)
-                    else: printing = False
-                if printing: new_chain.write(line)
-        new_chain.close()
-        shell(f"gzip -f accessory/{os.path.basename(config['CrossMap']['chain'])}.flt")
-        # cmd = f"cat {config['CrossMap']['fasta']} | awk 'BEGIN{{split({chrom_string},chroms); if(\$3 in chroms | \$8 in chroms) print \$0}}' | gzip > accessory/{os.path.basename(config['CrossMap']['chain'])}.flt.gz"
-        # shell(cmd)
+        if config['convert_coords'] == 'true':
+            if os.path.exists(f"accessory/{os.path.basename(config['CrossMap']['chain'])}"): os.remove(f"accessory/{os.path.basename(config['CrossMap']['chain'])}")
+            if os.path.exists(f"accessory/{os.path.basename(config['CrossMap']['fasta'])}"): os.remove(f"accessory/{os.path.basename(config['CrossMap']['fasta'])}")
+            shell(f"wget -P accessory/ {config['CrossMap']['fasta']}; wget -P accessory/ {config['CrossMap']['chain']}")
+            if config['CrossMap']['fasta'].endswith(".gz"): shell(f"gunzip -f accessory/{os.path.basename(config['CrossMap']['fasta'])}")
+            if config['CrossMap']['chain'].endswith(".gz"): shell(f"gunzip -f accessory/{os.path.basename(config['CrossMap']['chain'])}")
+            new_chain = open(f"accessory/{os.path.basename(config['CrossMap']['chain'])}.flt", 'w')
+            with open(f"accessory/{os.path.basename(config['CrossMap']['chain'])}".strip(".gz"), 'r') as chain_file:
+                printing = False
+                for line in chain_file:
+                    line0 = line.split()
+                    if len(line0) > 3:
+                        if line0[2] in params.chrom_list and line0[7] in params.chrom_list: # This checks that both chromosomes in the chain file exist in the expected set of chromosomes.  and or?
+                            printing = True
+                            new_chain.write(line)
+                        else: printing = False
+                    if printing: new_chain.write(line)
+            new_chain.close()
+            shell(f"gzip -f accessory/{os.path.basename(config['CrossMap']['chain'])}.flt")
+            # cmd = f"cat {config['CrossMap']['fasta']} | awk 'BEGIN{{split({chrom_string},chroms); if(\$3 in chroms | \$8 in chroms) print \$0}}' | gzip > accessory/{os.path.basename(config['CrossMap']['chain'])}.flt.gz"
+            # shell(cmd)
+        else:
+            shell("touch {CROSSCHAIN}; touch {CROSSFASTA}")
 
 rule cross_map:
     input: CROSSFASTA, CROSSCHAIN
@@ -180,6 +186,7 @@ rule typed_key:
 rule merge_typed_keys:
     input: expand(f"accessory/{{rawdata}}_typed_key.txt", rawdata=QUERY.keys())
     output: f"accessory/typed_key.txt"
+    params: awk_string1 = """awk \'{split($1,a,\":\"); print a[1],a[2],$1,a[3],a[4],$2}\'"""
     run:
         for i, key in enumerate(input):
             datset = key.split("/")[1].replace("_typed_key.txt",'')
@@ -208,11 +215,11 @@ rule merge_typed_keys:
             fdat = pd.merge(cm, tk, on=('snpID'), how='left')  #how to join?
             fdat.to_csv("accessory/typed_key.txt", header=False, sep = "\t", index=False)
             shell("rm accessory/typed_key_tmp.txt accessory/typed.vcf accessory/typed_crossmap.vcf")
-        else: shell("mv accessory/typed_key_tmp.txt accessory/typed_key.txt")
+        else: shell(f"tail -n +2 accessory/typed_key_tmp.txt | grep -v snpID | {{params.awk_string1}} > accessory/typed_key.txt")
 
 rule convert_vcfs:
     input: f"{{rawdata}}/{{rawdata}}_chr{{chrom}}.vcf.gz"
-    output: f"{{rawdata}}/{{rawdata}}_raw{{chrom}}.bed"
+    output: f"{{rawdata}}/{{rawdata}}_raw{{chrom}}.bed", f"{{rawdata}}/{{rawdata}}_raw{{chrom}}.bim"
     shell:
         f"{CMD_PREFIX} plink --vcf {{input}} --const-fid 0 --keep-allele-order --vcf-min-gp {config['min_gp']} "
         f"--make-bed --out {{wildcards.rawdata}}/{{wildcards.rawdata}}_raw{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}"
@@ -225,15 +232,15 @@ rule convert_dosage:
         f"--make-pgen --out {{wildcards.rawdata}}/{{wildcards.rawdata}}_dos{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}"
 
 rule impt_info_filter:
-    input: f"{{rawdata}}/{{rawdata}}_raw{{chrom}}.bed", f"accessory/{{rawdata}}_lowImptInfo.txt"
+    input: f"{{rawdata}}/{{rawdata}}_raw{{chrom}}.bed", f"accessory/{{rawdata}}_lowImptInfo.txt", f"{{rawdata}}/{{rawdata}}_raw{{chrom}}.bim"
     output: f"{{rawdata}}/{{rawdata}}_info{{chrom}}.bed"
-    shell: f"{CMD_PREFIX} plink --bfile {{wildcards.rawdata}}/{{wildcards.rawdata}}_raw{{wildcards.chrom}} --exclude accessory/{{wildcards.rawdata}}_lowImptInfo.txt "
+    shell: f"{CMD_PREFIX} plink --bfile {{wildcards.rawdata}}/{{wildcards.rawdata}}_raw{{wildcards.chrom}} --keep-allele-order --exclude accessory/{{wildcards.rawdata}}_lowImptInfo.txt "
             f"--make-bed --out {{wildcards.rawdata}}/{{wildcards.rawdata}}_info{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}"
 
 rule merge_info:
     input: expand(f"accessory/{{rawdata}}_lowImptInfo.txt", rawdata=QUERY.keys())
     output: f"accessory/lowImptInfo.txt", f"merged_vcfs/lowImptInfo.txt"
-    shell: f"{CMD_PREFIX} sh -c 'cat accessory/*_lowImptInfo.txt | sort | uniq > accessory/lowImptInfo.txt'; "
+    shell: f"{CMD_PREFIX} sh -c 'cat accessory/*_lowImptInfo.txt | sort -T {os.getcwd()} | uniq > accessory/lowImptInfo.txt'; "
             f"{CMD_PREFIX} cut -d ':' -f 1,2 accessory/lowImptInfo.txt | tr ':' '\\t' > merged_vcfs/lowImptInfo.txt"
 
 rule merge_vcfs:  #This will maintain original SNP ids produced by imputation.  If converting coords, this will produce snpIDs that are out of sync with coords.
@@ -255,12 +262,8 @@ rule update_IDs_sex_pheno:
     output: "{rawdata}/{rawdata}-varIDs_chr{chrom}.bed"
     shell: """
     {CMD_PREFIX} awk '{{printf("%s\\t%s:%s\\n",$2,$1,$4)}}' {wildcards.rawdata}/{wildcards.rawdata}_info{wildcards.chrom}.bim > {wildcards.rawdata}/{wildcards.rawdata}_info{wildcards.chrom}_varIDs.txt; 
-    {CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}_info{wildcards.chrom} --keep-allele-order 
-    --update-name {wildcards.rawdata}/{wildcards.rawdata}_info{wildcards.chrom}_varIDs.txt --update-sex accessory/sex.txt 
-    --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-varIDs_chr{wildcards.chrom};""" + f"{plnk_rsrc(rule, plink_run_specs)};" + """
-    {CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_chr{wildcards.chrom} --pheno accessory/pheno_file.txt 
-    --keep-allele-order --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-pheno_chr{wildcards.chrom} {plnk_rsrc(rule, plink_run_specs)}
-    """ + f"{plnk_rsrc(rule, plink_run_specs)}"
+    {CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}_info{wildcards.chrom} --keep-allele-order --update-name {wildcards.rawdata}/{wildcards.rawdata}_info{wildcards.chrom}_varIDs.txt --update-sex accessory/sex.txt --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-varIDs_tmp_chr{wildcards.chrom}""" + f" {plnk_rsrc(rule, plink_run_specs)};" + """
+    {CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-varIDs_tmp_chr{wildcards.chrom} --pheno accessory/pheno_file.txt --keep-allele-order --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-varIDs_chr{wildcards.chrom}""" + f" {plnk_rsrc(rule, plink_run_specs)}; rm {{wildcards.rawdata}}/{{wildcards.rawdata}}-varIDs_tmp_chr{{wildcards.chrom}}*"
 
 #TODO add mbc test in here now that we've moved phenotype addition above
 rule QCcombine_query:
@@ -285,7 +288,7 @@ rule restore_strand:
     input: "{rawdata}/{rawdata}-QC_chr{chrom}.bed"
     output: "{rawdata}/{rawdata}-QC-Ref_chr{chrom}.bed"
     params:
-        bim_file = "{rawdata}/{rawdata}_info{chrom}.bim"
+        bim_file = "{rawdata}/{rawdata}-varIDs_chr{chrom}.bim"
     shell:
         f"{CMD_PREFIX} plink --bfile {{wildcards.rawdata}}/{{wildcards.rawdata}}-QC_chr{{wildcards.chrom}} --make-bed "
         f"--a2-allele {{params.bim_file}} 6 2 --out {{wildcards.rawdata}}/{{wildcards.rawdata}}-QC-Ref_chr{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}"
@@ -338,8 +341,7 @@ rule merge_dosage:
         shell(f"{CMD_PREFIX} bcftools merge -l accessory/dosage.{{wildcards.chrom}}.merge.list -Oz -o merged_vcfs/{OUT}.{{wildcards.chrom}}.usort.QC.vcf.gz;"
               f"{CMD_PREFIX} tabix merged_vcfs/{OUT}.{{wildcards.chrom}}.usort.QC.vcf.gz; "
               f"{CMD_PREFIX} bcftools sort merged_vcfs/{OUT}.{{wildcards.chrom}}.usort.QC.vcf.gz --temp-dir {OUT}_chr{{wildcards.chrom}} -Oz -o merged_vcfs/{OUT}.{{wildcards.chrom}}.QC.vcf.gz;"
-              f"{CMD_PREFIX} tabix merged_vcfs/{OUT}.{{wildcards.chrom}}.QC.vcf.gz;"
-              f"rm -r {OUT}_chr{{wildcards.chrom}}")
+              f"{CMD_PREFIX} tabix merged_vcfs/{OUT}.{{wildcards.chrom}}.QC.vcf.gz; rm merged_vcfs/{OUT}.{{wildcards.chrom}}.usort.QC.vcf.gz")
 
 # rule filter_vcf:
 #     input: f"merged_vcfs/{OUT}_chr{{chrom}}.vcf.gz", f"{OUT}-QC_chr{{chrom}}.bim"
@@ -392,6 +394,7 @@ rule make_report:
                         if not line.startswith("#"): typed.write(f"{dataset}\t" + "\t".join(line.split(":")))
                         if not line.endswith("\n"): typed.write(f"\n")
         with open("scripts/gather_report_data.sh", 'w') as report_cmds:
+            #report_cmds.write("wc -l */tmp/*txt | grep -v -e scripts -e total | awk \'{split($2,a,\"/\"); split(a[3],b,\".\"); split(b[1],c,\"-\"); print c[1],b[3],$1}\' > accessory/filter.stats\n")
             report_cmds.write("wc -l */*fltdSNPs*txt | grep -v -e scripts -e total | awk \'{split($2,a,\"/\"); split(a[2],b,\"QC_\"); split(b[2],c,\".\"); print a[1],c[1],c[3],$1}\' > accessory/chromfilter.stats\n")
             report_cmds.write("wc -l */*dupvar | awk \'{split($2,a,\"/\"); split(a[2],b,\"QC_\"); split(b[2],c,\".\"); print a[1],c[1],c[2],$1}\' | grep -v total >> accessory/chromfilter.stats\n")
             if config['convert_coords'] == 'true':

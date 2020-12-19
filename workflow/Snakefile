@@ -38,7 +38,8 @@ if config['singularity']['use_singularity'] == 'true' and config['singularity'][
     for x in QUERY.keys():
         for k,v in QUERY[x].items():
             path = os.path.dirname(str(v))
-            if path not in query_paths: query_paths.append(path)
+            if path:
+                if path not in query_paths: query_paths.append(path)
     bind_paths = ",".join(set(query_paths + [os.path.dirname(REFASTA), os.path.dirname(REFVCF)] + [f"{os.getcwd()}/{x}" for x in ['OandE', 'accessory', config['singularity']['code']] + list(QUERY.keys())]))
     CMD_PREFIX = f"set +u; {config['singularity']['module']}; singularity exec --bind {bind_paths},{os.getcwd()} {config['singularity']['image']}"
     CODE = config['singularity']['code']
@@ -59,7 +60,7 @@ for datset in QUERY.keys():
 #TODO Make this robust to chromosomes > 23.
 CHROMS = config['chroms']
 if CHROMS == 'all':
-    CHROMS = [str(x) for x in range(1, 27)]
+    CHROMS = [str(x) for x in range(1, 23)]
     if config['include_x'] == 'yes': CHROMS.append('X')
 
 # Run locally or submit to cluster depending on config.yml
@@ -72,7 +73,7 @@ else:
     assert os.path.exists(config['run_settings']['cluster_config']), print(f"\nMust provide a cluster configuration file under run_settings -> cluster_config in the config.yml file\nFile \'{config['run_settings']['cluster_config']}\' does not exist\n")
     clusterfile = yaml.load(open(config['run_settings']['cluster_config']), Loader=yaml.FullLoader)
     for rule in clusterfile.keys(): # Purpose of this code is to make sure plink requests same amount of memory/threads as specified in cluster.yaml file
-        if config['run_settings']['scheduler'] == 'slurm': plink_run_specs[rule] = f"--memory {int(clusterfile[rule]['mem-per-cpu'].replace('G','000')) * int(clusterfile[rule]['ntasks'])} --threads {clusterfile[rule]['ntasks']}"
+        if config['run_settings']['scheduler'] == 'slurm': plink_run_specs[rule] = f"--memory {int(clusterfile[rule]['mem'].replace('G','000'))} --threads {clusterfile[rule]['ntasks']}"
         elif config['run_settings']['scheduler'] == 'pbs':  plink_run_specs[rule] = f"--memory {clusterfile[rule]['mem'].replace('b','').replace('m','').replace('g','000')} --threads 1"
 
 
@@ -106,7 +107,7 @@ rule clean: # run snakemake clean to clear all (or most) of the created output
 
 rule make_rulegraph:
     output: f"{OUT}-rulegraph.png"
-    shell: f"snakemake --rulegraph --configfile workflow/config.yml > accessory/Pipeline_DAG.dot; {CMD_PREFIX} dot -Tpng accessory/Pipeline_DAG.dot > {{output}}"
+    shell: f"snakemake --rulegraph --nolock --configfile workflow/config.yml > accessory/Pipeline_DAG.dot; {CMD_PREFIX} dot -Tpng {os.getcwd()}/accessory/Pipeline_DAG.dot > {{output}}"
 
 rule update_alleles_IDs: # Update chromosome labels, SNP IDs, and alleles
     output: "{rawdata}/tmp/{rawdata}_alleles_IDs.bed"
@@ -122,28 +123,28 @@ rule update_alleles_IDs: # Update chromosome labels, SNP IDs, and alleles
         if params.ids != "none":
             if params.alleles != "none":
                 if params.chrom_ids != "none":
-                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --snps-only 'just-acgt' --keep-allele-order --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom {plnk_rsrc(rule, plink_run_specs)}; "
+                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --snps-only --keep-allele-order --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom {plnk_rsrc(rule, plink_run_specs)}; "
                           f"{{params.exec}} --bfile {{params.prefix}}.chrom --keep-allele-order --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles {plnk_rsrc(rule, plink_run_specs)}; "
                           f"{{params.exec}} --bfile {{params.prefix}}_alleles --keep-allele-order --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs {plnk_rsrc(rule, plink_run_specs)}")
                 else:
-                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --snps-only 'just-acgt' --keep-allele-order --exclude {{params.prefix}}.dups --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles {plnk_rsrc(rule, plink_run_specs)}; "
+                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --snps-only --keep-allele-order --exclude {{params.prefix}}.dups --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles {plnk_rsrc(rule, plink_run_specs)}; "
                           f"{{params.exec}} --bfile {{params.prefix}}_alleles --keep-allele-order --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs {plnk_rsrc(rule, plink_run_specs)}")
             elif params.chrom_ids != "none":
-                shell(f"{{params.exec}} --bfile {{params.in_pre}} --snps-only 'just-acgt' --keep-allele-order --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom {plnk_rsrc(rule, plink_run_specs)}; "
+                shell(f"{{params.exec}} --bfile {{params.in_pre}} --snps-only --keep-allele-order --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom {plnk_rsrc(rule, plink_run_specs)}; "
                       f"{{params.exec}} --bfile {{params.prefix}}.chrom --keep-allele-order --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs {plnk_rsrc(rule, plink_run_specs)}")
             else:
-                shell(f"{{params.exec}} --bfile {{params.in_pre}} --snps-only 'just-acgt' --keep-allele-order --exclude {{params.prefix}}.dups --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs {plnk_rsrc(rule, plink_run_specs)}")
+                shell(f"{{params.exec}} --bfile {{params.in_pre}} --snps-only --keep-allele-order --exclude {{params.prefix}}.dups --update-name {{params.ids}} --make-bed --out {{params.prefix}}_alleles_IDs {plnk_rsrc(rule, plink_run_specs)}")
         else:
             if params.alleles != "none":
                 if params.chrom_ids != "none":
-                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --snps-only 'just-acgt' --keep-allele-order --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom {plnk_rsrc(rule, plink_run_specs)}; "
+                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --snps-only --keep-allele-order --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}.chrom {plnk_rsrc(rule, plink_run_specs)}; "
                           f"{{params.exec}} --bfile {{params.prefix}}.chrom --keep-allele-order --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles")
                 else:
-                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --snps-only 'just-acgt' --keep-allele-order --exclude {{params.prefix}}.dups --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles_IDs {plnk_rsrc(rule, plink_run_specs)}")
+                    shell(f"{{params.exec}} --bfile {{params.in_pre}} --snps-only --keep-allele-order --exclude {{params.prefix}}.dups --update-alleles {{params.alleles}} --make-bed --out {{params.prefix}}_alleles_IDs {plnk_rsrc(rule, plink_run_specs)}")
             elif params.chrom_ids != "none":
-                shell(f"{{params.exec}} --bfile {{params.in_pre}} --snps-only 'just-acgt' --keep-allele-order --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}_alleles_IDs {plnk_rsrc(rule, plink_run_specs)}")
+                shell(f"{{params.exec}} --bfile {{params.in_pre}} --snps-only --keep-allele-order --exclude {{params.prefix}}.dups --update-chr {{params.chrom_ids}} --make-bed --out {{params.prefix}}_alleles_IDs {plnk_rsrc(rule, plink_run_specs)}")
             else:
-                shell(f"{{params.exec}} --snps-only 'just-acgt' --keep-allele-order --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --make-bed --out {{params.prefix}}_alleles_IDs {plnk_rsrc(rule, plink_run_specs)}")
+                shell(f"{{params.exec}} --snps-only --keep-allele-order --bfile {{params.in_pre}} --exclude {{params.prefix}}.dups --make-bed --out {{params.prefix}}_alleles_IDs {plnk_rsrc(rule, plink_run_specs)}")
 
 rule flip_strands:
     input: "{rawdata}/tmp/{rawdata}_alleles_IDs.bed"
@@ -258,11 +259,11 @@ rule make_report:
     params: input_list = ",".join(expand("{rawdata}/{rawdata}.chr20_freq.txt", rawdata=QUERY.keys()))
     run:
         with open("scripts/gather_report_data.sh", 'w') as report_cmds:
-            report_cmds.write("wc -l */tmp/*txt | grep -v -e scripts -e total | awk \'{split($2,a,\"/\"); split(a[3],b,\".\"); split(b[1],c,\"-\"); print c[1],b[3],$1}\' > accessory/filter.stats\n")
-            report_cmds.write("wc -l */tmp/*flips.bim | grep -v -e total | awk \'{split($2,a,\"/\"); split(a[3],b,\".\"); split(b[1],c,\"_\"); printf(\"%s raw %s\\n\", c[1],$1)}\' >> accessory/filter.stats\n")
-            report_cmds.write("for f in OandE/FixRef.rawdata*err; do awk \'{print FILENAME, $0}\' $f | tail -q -n 40 | grep -e NS | grep -v Number | cut -d \"=\" -f 2 | awk \'{split($1,a,\".\"); print a[1],$3,$4,$5}\' | sed \'s/ref /ref-/\' | sed \'s/fixed /fixed-/\' | sed \'s/%//\'; done > accessory/FixRef.stats\n")
-            report_cmds.write("zcat " + REFVCF +  " | vawk \'{split(I$CAF,a,\",\"); if($1==20) print $1,$2,$3,a[1]}\' | awk \'{if(NF==4) print $0}\' > accessory/ref_freqs.txt\n")
-            report_cmds.write("for f in */*chr20.vcf.gz; do zgrep -v \"#\" $f | shuf -n 10000 |  vawk \'{print $1,$2,$3, S$*$GT}\' | tr \"/\" \" \" | tr \":\" \" \" > ${f%.vcf.gz}_freq.txt; done\n")
+            report_cmds.write("wc -l " + os.getcwd() + "/*/tmp/*txt | grep -v -e scripts -e total | awk \'{A=split($2,a,\"/\"); split(a[A],b,\".\"); split(b[1],c,\"-\"); print c[1],b[3],$1}\' > " + os.getcwd() + "/accessory/filter.stats\n")
+            report_cmds.write("wc -l " + os.getcwd() + "/*/tmp/*flips.bim | grep -v -e total | awk \'{A=split($2,a,\"/\"); split(a[A],b,\".\"); split(b[1],c,\"_\"); printf(\"%s raw %s\\n\", c[1],$1)}\' >> " + os.getcwd() + "/accessory/filter.stats\n")
+            report_cmds.write("for f in " + os.getcwd() + "/OandE/FixRef.rawdata*err; do awk \'{print FILENAME, $0}\' $f | tail -q -n 40 | grep -e NS | grep -v Number | cut -d \"=\" -f 2 | awk \'{split($1,a,\".\"); print a[1],$3,$4,$5}\' | sed \'s/ref /ref-/\' | sed \'s/fixed /fixed-/\' | sed \'s/%//\'; done > " + os.getcwd() + "/accessory/FixRef.stats\n")
+            report_cmds.write("tabix -f " + REFVCF + "; tabix " + REFVCF +  " 20 | vawk \'{split(I$CAF,a,\",\"); if($1==20) print $1,$2,$3,a[1]}\' | awk \'{if(NF==4) print $0}\' > " + os.getcwd() + "/accessory/ref_freqs.txt\n")
+            report_cmds.write("for f in " + os.getcwd() + "/*/*chr20.vcf.gz; do zgrep -v \"#\" $f | shuf -n 10000 |  vawk \'{print $1,$2,$3, S$*$GT}\' | tr \"/\" \" \" | tr \":\" \" \" > ${f%.vcf.gz}_freq.txt; done\n")
 
             report_line = f"echo \'rmarkdown::render(\"scripts/DataPrep_report.Rmd\", output_file=\"{OUT}-report.pdf\", " \
                           f"params=list(flt_file=\"accessory/filter.stats\", " \

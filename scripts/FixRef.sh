@@ -144,7 +144,7 @@ if [ "${DataPrepStep3}" == "t" ]; then
   printf "\n\nSorting the BCF output since fixing it may have made it unsorted \n"
   echo ----------------------------------------------
 
-  (${bcftools_Exec} view -h ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf; ${bcftools_Exec} view -H ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf | sort -k1,1d -k2,2n;) | ${bcftools_Exec} view -Ob -o ./TEMP/DataFixStep3_${BASE}-RefFixedSorted.bcf
+  (${bcftools_Exec} view -h ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf; ${bcftools_Exec} view -H ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf | sort -k1,1d -k2,2n -T ./TEMP/;) | ${bcftools_Exec} view -Ob -o ./TEMP/DataFixStep3_${BASE}-RefFixedSorted.bcf
 
   printf "Done \n\n\n"
 

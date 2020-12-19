@@ -21,7 +21,7 @@ snp_list: "accessory/ALL_snpLoc.txt"
 perform_QC: 'true'
 convert_coords: 'true' # Convert coordinates from hg38 to hg19?
 QC:
-  Rsq_treshold: "0.5"  # Imputed variants with Rsq less than this threshold will be removed.  Set to 0 to disable filter.
+  Rsq_threshold: "0.5"  # Imputed variants with Rsq less than this threshold will be removed.  Set to 0 to disable filter.
   vm1: "0.2"
   gm: "0.1"
   vm2: "0.05"  # Ultimate call rate for variants after removing low-callrate samples
@@ -39,5 +39,5 @@ cmd_prefix: "module load plink/1.90b6.10; module load htslib/1.6; module load bc
 python: 'python3.7'
 run_settings:
   local_run: 'false'
-  cluster_config: 'workflow/cluster.yaml'
-  scheduler: 'pbs'
+  cluster_config: 'workflow/cluster_slurm.yaml'
+  scheduler: 'slurm'

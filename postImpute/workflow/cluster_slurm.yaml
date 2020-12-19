@@ -4,7 +4,7 @@ __default__:
   p: 'ccgg'
   job-name: "{rule}"
   time: "4:00:00"
-  mem-per-cpu: "5G"
+  mem: "5G"
   ntasks: "1"
   nodes: "1"
   mail-user: "pmonnaha@umn.edu"
@@ -14,50 +14,42 @@ __default__:
 
 QCcombine_query:
   time: "12:00:00"
-  mem-per-cpu: "16G"
+  mem: "16G"
   ntasks: "1"
   nodes: "1"
 
 cross_map:
   time: '48:00:00'
-  mem-per-cpu: '16G'
-  ntasks: "1"
-  nodes: "1"
+  mem: '16G'
 
 convert_vcfs:
   time: '48:00:00'
-  mem-per-cpu: '32G'
+  mem: '32G'
   ntasks: "1"
-  nodes: "1"
 
 convert_dosage:
   time: '48:00:00'
-  mem-per-cpu: '16G'
+  mem: '16G'
   ntasks: "1"
-  nodes: "1"
 
 filter_dosage:
   time: '24:00:00'
-  mem-per-cpu: '16G'
+  mem: '16G'
   ntasks: "1"
-  nodes: "1"
 
 merge_dosage:
   time: '48:00:00'
-  mem-per-cpu: '32G'
+  mem: '32G'
   ntasks: "1"
-  nodes: "1"
 
 merge_vcfs:
   time: '48:00:00'
-  mem-per-cpu: '32G'
-  nodes: "1"
+  mem: '32G'
 
 merge_inputs:
   time: '4:00:00'
-  mem-per-cpu: '32G'
+  mem: '32G'
   ntasks: "1"
-  nodes: "1"
 
 
 

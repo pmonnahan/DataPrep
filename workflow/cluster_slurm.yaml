@@ -2,6 +2,7 @@
 __default__:
   A: 'spectorl' #MODIFY.  This should be name of your account with your HPC system
   job-name: "{rule}"
+  p: 'ccgg'
   time: "4:00:00"
   mem: "5G"
   ntasks: "1"
@@ -19,7 +20,7 @@ QCcombine_query:
 
 update_alleles_IDs:
   time: "4:00:00"
-  mem-per-cpu: "32G"
+  mem: "32G"
   ntasks: "1"
   nodes: "1"
 
