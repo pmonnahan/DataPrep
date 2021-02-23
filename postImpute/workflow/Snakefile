@@ -76,13 +76,13 @@ plink_rules = ['__default__',"merge_inputs","convert_vcfs","QCcombine_query","re
 if config['run_settings']['local_run'] == 'true':
     localrules: all, update_alleles_IDs, FixRef, QCcombine_query, download_refs, merge_typed_keys
 else:
-    localrules: all, make_rulegraph, download_refs, merge_typed_keys
+    localrules: all, download_refs, merge_typed_keys
     assert config['run_settings']['scheduler'] in ['pbs', 'slurm'], print(f"\nThe scheduler specified at run_settings -> scheduler: \'{config['run_settings']['scheduler']}\' is invalid.\n")
     assert os.path.exists(config['run_settings']['cluster_config']), print(f"\nMust provide a cluster configuration file under run_settings -> cluster_config in the config.yml file\nFile \'{config['run_settings']['cluster_config']}\' does not exist\n")
     clusterfile = yaml.load(open(config['run_settings']['cluster_config']), Loader=yaml.FullLoader)
     for rule in clusterfile.keys(): # Purpose of this code is to make sure plink requests same amount of memory/threads as specified in cluster.yaml file
         if rule in plink_rules:
-            if config['run_settings']['scheduler'] == 'slurm': plink_run_specs[rule] = f"--memory {int(clusterfile[rule]['mem'].replace('G','000'))} --threads {clusterfile[rule]['ntasks']}"
+            if config['run_settings']['scheduler'] == 'slurm': plink_run_specs[rule] = f"--memory {int(int(clusterfile[rule]['mem'].replace('G','000'))*0.9)} --threads {clusterfile[rule]['ntasks']}"
             elif config['run_settings']['scheduler'] == 'pbs':  plink_run_specs[rule] = f"--memory {clusterfile[rule]['mem'].replace('b','').replace('m','').replace('g','000')} --threads 1"
 
 # Conditionally set expected outputs of various steps depending on flags in config.yml
@@ -93,7 +93,7 @@ def get_all_inputs(wildcards):
     if config['merge'] == 'true':
         input_list.append(f"{OUT}.bed")
         input_list.append(f"{OUT}-QC.bed")
-    input_list += expand(f"{{rawdata}}/.{{rawdata}}-PhenoFixed", rawdata=QUERY.keys())
+    #input_list += expand(f"{{rawdata}}/.{{rawdata}}-PhenoFixed", rawdata=QUERY.keys())
     input_list.append(f"accessory/typed_key.txt")
     return(input_list)
 
@@ -116,15 +116,18 @@ def plnk_rsrc(rule_name, plink_specs):
 
 rule all:
     #input: get_all_inputs
-    input: expand(f"{OUT}-QC_chr{{chrom}}.bed", chrom=CHROMS), f"{OUT}-report.pdf", f"{OUT}-rulegraph.png", f"accessory/typed_key.txt", f"merged_vcfs/{OUT}.dosage.vcf.gz"
+    input: expand(f"{OUT}-QC_chr{{chrom}}.bed", chrom=CHROMS), f"{OUT}-report.pdf", f"accessory/typed_key.txt", f"merged_vcfs/{OUT}.dosage.vcf.gz"
 
 rule clean:
     input: expand("{query}",query=QUERY.keys())
-    shell: "rm -r {input}/*"
+    run:
+        shell("rm *bim; rm *fam; rm *bed; rm *txt")
+        for dir in input:
+            shell("rm -r {input}/")
 
-rule make_rulegraph:
-    output: f"{OUT}-rulegraph.png"
-    shell: f"snakemake --rulegraph --configfile workflow/config.yml > accessory/Pipeline_DAG.dot; {CMD_PREFIX} dot -Tpng accessory/Pipeline_DAG.dot > {{output}}"
+# rule make_rulegraph:
+#     output: f"{OUT}-rulegraph.png"
+#     shell: f"snakemake --rulegraph --configfile workflow/config.yml > accessory/Pipeline_DAG.dot; {CMD_PREFIX} dot -Tpng accessory/Pipeline_DAG.dot > {{output}}"
 
 rule download_refs:
     output: CROSSCHAIN, CROSSFASTA
@@ -180,7 +183,7 @@ rule typed_key:
     shell:
         f"{CMD_PREFIX} zgrep Genotyped {{params.in_pre}}/chr*.info.gz | {{params.awk_string1}} | grep -v -f {{params.in_pre}}/typed-only.txt | "
         f"grep -v SNP | cut -d \':\' -f 2- > accessory/{{wildcards.rawdata}}_typed_key.txt || true; "
-        f"{CMD_PREFIX} {{params.awk_string2}} {{params.in_pre}}/typed-only.txt | grep -v Position >> accessory/{{wildcards.rawdata}}_typed_key.txt; "
+        f"{CMD_PREFIX} {{params.awk_string2}} {{params.in_pre}}/typed-only.txt | grep -v Position >> accessory/{{wildcards.rawdata}}_typed_key.txt || true; "
         f"{CMD_PREFIX} zcat {{params.in_pre}}/chr*.info.gz | {{params.awk_string3}} > accessory/{{wildcards.rawdata}}_lowImptInfo.txt"
 
 rule merge_typed_keys:
@@ -316,7 +319,7 @@ rule filter_merged:
 rule filter_dosage:
     input: f"{{rawdata}}/{{rawdata}}_dos{{chrom}}.pgen", f"{OUT}-QC_chr{{chrom}}.bim"
     output: f"{{rawdata}}/{{rawdata}}_QCdos{{chrom}}.pgen", f"{{rawdata}}/{{rawdata}}_QCdos{{chrom}}.vcf.gz"
-    shell: f"cut -f 2 {OUT}-QC_chr{{wildcards.chrom}}.bim > accessory/snps.dos.{{wildcards.chrom}};"
+    shell: f"cut -f 2 {OUT}-QC_chr{{wildcards.chrom}}.bim | sed 's/23:/X:/' > accessory/snps.dos.{{wildcards.chrom}};"
             f"{CMD_PREFIX} plink2 --pfile {{wildcards.rawdata}}/{{wildcards.rawdata}}_dos{{wildcards.chrom}} "
             f"--extract accessory/snps.dos.{{wildcards.chrom}} --set-all-var-ids @:# --update-sex accessory/sex.txt --pheno accessory/pheno_file.txt --make-pgen "
             f"--out {{wildcards.rawdata}}/{{wildcards.rawdata}}_QCdos{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}; "
@@ -369,7 +372,7 @@ rule concat_vcfs:
               f" {CMD_PREFIX} tabix {{output}}")
 
 rule make_report:
-    input: expand(f"{OUT}-QC_chr{{chrom}}.bed", chrom=CHROMS), f"{OUT}-rulegraph.png"
+    input: expand(f"{OUT}-QC_chr{{chrom}}.bed", chrom=CHROMS)#, f"{OUT}-rulegraph.png"
     output: f"{OUT}-report.pdf"
     run:
         with open("accessory/chunks_excluded.txt", 'w') as exc_file:
@@ -410,7 +413,7 @@ rule make_report:
                           f"params=list(chrom_file=\"accessory/chromfilter.stats\", " \
                           f"merge_file=\"accessory/merge.stats\", chunk_file=\"accessory/chunks_excluded.txt\", " \
                           f"snp_file=\"accessory/snps_excluded.txt\", " \
-                          f"rulegraph_file=\"{OUT}-rulegraph.png\", " \
+                          f"rulegraph_file=\"Pipeline_DAG.png\", " \
                           f"config_file=\"workflow/config.yml\"))\' | R --vanilla"
             report_cmds.write(report_line)
 

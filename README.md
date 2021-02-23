@@ -35,16 +35,29 @@ A companion pipeline, which performs post-imputation QC, will download alongside
 ## Requirements
 
 ### Snakemake
-The pipeline is coordinated and run on an HPC (or locally) using _Snakemake_.  On UMN's HPC, snakemake can be installed by:
-
+The pipeline is coordinated and run on an HPC (or locally) using _Snakemake_.  To install snakemake, first create a virtual environment via:
+  
     module load python3/3.6.3_anaconda5.0.1
-    conda install -c conda-forge -c bioconda snakemake python=3.6
+    conda create -n <environment_name> pandas
+  
+This will create a new virtual environment and install `pandas`, which is required for running the pipeline.  Then, snakemake can be installed by:
 
-The 'module load' command will likely need to be run each time prior to use of Snakemake.
+    conda activate <environment_name>
+    conda install -c conda-forge -c bioconda snakemake python=3.6
 
 Alternatively, you can try installing snakemake via _pip_:
 
     pip3 install --user snakemake pyaml
+    
+You will also need to install `numpy` and `yaml` packages
+
+    conda install numpy yaml
+
+Anytime you need to run the pipeline, activate this environment beforehand via:
+
+    conda activate <environment_name>
+
+If you choose not to create an environment, you must ensure that pandas is installed and available for your python installation.
 
 ### Singularity
 
@@ -72,7 +85,7 @@ The critical files responsible for executing the pipeline are contained in the _
 
 The _Snakefile_ is the primary workhouse of snakemake, which specifies the dependencies of various parts of the pipeline and coordinates execution.  No modifications to the _Snakefile_ are necessary.  
 
-In order for the _Snakefile_ to locate all of the necessary input and correctly submit jobs to the cluster, **both** the _config.yaml_ and _cluster.yaml_ need to be modified. Open these files and change the required entries that are indicated with 'MODIFY'.  Other fields do not require modification, although this may be desired given the particulars of the run you wish to implement.  Details on each entry in the config file (e.g. what the program expects in each entry as well as the purpose of the entry) are provided in the _Pipeline Overview_ at the bottom.
+In order for the _Snakefile_ to locate all of the necessary input and correctly submit jobs to the cluster, **both** the _config.yaml_ and _cluster.yaml_ need to be modified. Open these files and change the required entries that are indicated with 'MODIFY'.  Other fields do not require modification, although this may be desired given the particulars of the run you wish to implement.  Details on each entry in the config file (e.g. what the program expects in each entry as well as the purpose of the entry) are provided in the _Pipeline Overview_ at the bottom.  Note: avoid using periods or underscores when naming output files or datasets as this may cause issues with the report creation.
 
 The entire pipeline can be executed on a local machine (not recommended) or on an HPC, and the _cluster.yaml_ file is required only for the latter.  For a local run, change the `local_run` entry to `true` under the `run_settings` section of the config file, and launch snakemake from within the parent directory by the simple command:
 
@@ -120,8 +133,9 @@ Should an error be encountered in a job, snakemake will halt the pipeline and in
 ## Pipeline Overview
 
 ### Input Data
-One or more sets of PLINK files are accepted as input and are specified at the 'data' entry under the 'query' section of the config file.  Along with each dataset, the user can specify the following "keys":  
+Under the 'query' section, you can specify the inputs for one or more datasets.  Each dataset should be uniquely named (Note: avoid using periods or underscores when naming output files or datasets as this may cause issues with the report creation.) with values specified for the following "keys":  
 
+-   **data**: path to the PLINK files (just the PLINK prefix). 
 -   **chrom_key**: tab-delimited text file with 2 columns (no header).  The first column contains the old chromosome names, and the second column contains the new names. 
     - Used for converting to numeric names. e.g chr10 to 10.
 -   **allele_key**: tab-delimited text file with 5 columns (no header).  First column is snpID and following columns are: old_allele1 old_allele2 new_allele1 new_allele2.  

@@ -2,7 +2,7 @@
 #!/usr/bin/env python
 """
 Author: Patrick Monnahan
-Purpose:
+Purpose: Apply a standard set of QC steps to a plink file
 Requirements:
  Takes the following arguments:
     -i:
@@ -57,36 +57,33 @@ def calc_stats(bfile, plink):
 
 def wrapQC(input, output, tvm1, tgm, tvm2, maf, hwe, mbs, plink):
 
-    # TODO: Add first round of QC, filtering for related samples.  Perhaps this should be separate script
-    # TODO: Add last round of QC, filtering for related samples in the combined dataset
-    out1, err1 = var_miss(input, tvm1, f"{output}.var_miss{tvm1}", plink)
-    out2, err2 = geno_miss(f"{output}.var_miss{tvm1}", tgm, f"{output}.geno_miss{tgm}", plink)
+    out1, err1 = var_miss(input, tvm1, f"{output}.var_miss{tvm1}", plink) #Remove variants with first missingness threshold
+    out2, err2 = geno_miss(f"{output}.var_miss{tvm1}", tgm, f"{output}.geno_miss{tgm}", plink) #Remove individuals with high missingness
     out3, err3 = geno_flt(input, f"{output}.geno_miss{tgm}.fam",
-                         f"{output}.geno_flt{tgm}", plink)
+                         f"{output}.geno_flt{tgm}", plink) #Remove variants with second missingness threshold.
 
-    out2, err2 = calc_stats(f"{output}.geno_flt{tgm}", plink)
+    out2, err2 = calc_stats(f"{output}.geno_flt{tgm}", plink) #Calculate statistics for remainder of QC thresholding
     DF_list = []
-    for stat in ['frq', 'hwe', 'lmiss', 'missing']:
+    for stat in ['frq', 'hwe', 'lmiss', 'missing']: #Create list of dataframes to store results from each statistic
         tdf = pd.read_csv(f"{output}.geno_flt{tgm}.{stat}", sep = r"\s+")
         if stat=="hwe":
-            tdf = tdf[tdf['TEST']=="UNAFF"]
+            tdf = tdf[tdf['TEST']=="UNAFF"] #Phenotypes are not labelled at this point, so this should consider all samples
         DF_list.append(tdf)
-    df = reduce(lambda df1, df2: pd.merge(df1, df2, on='SNP'), DF_list)
-    # ARIC is failing HWE massively.c
+    df = reduce(lambda df1, df2: pd.merge(df1, df2, on='SNP'), DF_list) #Merge list of dataframes into single dataframe based on SNP ID
+    # Apply thresholds for each metric and save to
     df2 = df.query(f"MAF < {maf} | P_x < {hwe} | F_MISS > {tvm2} | P_y < {mbs}")
     df3 = df.query(f"MAF < {maf}")
     df4 = df.query(f"P_x < {hwe}")
     df5 = df.query(f"F_MISS > {tvm2}")
     df6 = df.query(f"P_y < {mbs}")
-    df2['SNP'].to_csv(f"{output}.fltdSNPs.txt", header=False, index=False)
-    df6.to_csv(f"{output}.fltdSNPs.mbs.txt", index=False)
+    df2['SNP'].to_csv(f"{output}.fltdSNPs.txt", header=False, index=False) #Write single file with all SNPs to be filtered
+    df6.to_csv(f"{output}.fltdSNPs.mbs.txt", index=False) #Write individual files for profiling which SNP gets caught by which filter
     df3.to_csv(f"{output}.fltdSNPs.maf.txt", index=False)
     df4.to_csv(f"{output}.fltdSNPs.hwe.txt", index=False)
     df5.to_csv(f"{output}.fltdSNPs.miss.txt", index=False)
-    cmd = f"{plink} --bfile {output}.geno_flt{tgm} --list-duplicate-vars suppress-first --out {output}; tail -n +2 {output}.dupvar | cut -f 4 >> {output}.fltdSNPs.txt;"
-    cmd += f"cat {output}.geno_flt{tgm}.bim | " + "awk '{if($5 == \"N\" || $6 == \"N\") print $2}' >> " + output + ".fltdSNPs.txt; "
-    cmd += f"cut -f 2 {output}.geno_flt{tgm}.bim | sort | uniq -d >> {output}.fltdSNPs.txt; {plink} --bfile {output}.geno_flt{tgm} --exclude {output}.fltdSNPs.txt --make-bed --out {output}.QC; sed 's/^24/23/' {output}.QC.bim | sed 's/^X/23/' > {output}.QC.bim.tmp; mv {output}.QC.bim.tmp {output}.QC.bim"
-    print(cmd)
+    cmd = f"{plink} --bfile {output}.geno_flt{tgm} --list-duplicate-vars suppress-first --out {output}; tail -n +2 {output}.dupvar | cut -f 4 >> {output}.fltdSNPs.txt;" #Identify and add duplicate variant positions to the list to be removed
+    cmd += f"cat {output}.geno_flt{tgm}.bim | " + "awk '{if($5 == \"N\" || $6 == \"N\") print $2}' >> " + output + ".fltdSNPs.txt; " #Remove any markers with a non-ACGT allele code
+    cmd += f"cut -f 2 {output}.geno_flt{tgm}.bim | sort | uniq -d >> {output}.fltdSNPs.txt; {plink} --bfile {output}.geno_flt{tgm} --exclude {output}.fltdSNPs.txt --make-bed --out {output}.QC; sed 's/^24/23/' {output}.QC.bim | sed 's/^X/23/' > {output}.QC.bim.tmp; mv {output}.QC.bim.tmp {output}.QC.bim" #Remove duplicates based on variant IDs. Apply SNP filters, and rename sex chromosomes.
     pp1 = subprocess.Popen(cmd, shell=True)  # Run cmd1
     out1, err1 = pp1.communicate()  # Wait for it to finish
 

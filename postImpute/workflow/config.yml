@@ -1,12 +1,12 @@
 #Modify all lines indicated with MODIFY
-outname: "CCLRP"
+outname: "CCRLP"
 query:
-  "cclrp": "/PATH/TO/DIRECTORY/CONTAINING/IMPUTATION/OUTPUT/" # MODIFY
+  "ccrlp": "/PATH/TO/DIRECTORY/CONTAINING/IMPUTATION/OUTPUT/" # MODIFY
 phenotype_data: # Must specify a phenotype file where first column is sample ID (must match those in imputed VCFs) and phenotype is second column
-  pheno_file: "none" #MODIFY
-  sex_file: "none" #MODIFY
+  pheno_file: "/PATH/TO/FILE/CONTAINING/PHENOTYPE_DATA" #MODIFY
+  sex_file: "/PATH/TO/FILE/CONTAINING/SEX_DATA" #MODIFY
 singularity:
-  image: '/PATH/TO/AncestryInference2.sif' # MODIFY
+  image: '/PATH/TO/SINGULARITY/IMAGE/AncestryInference.sif' # MODIFY
   module: 'module load singularity'
   code: 'scripts/'
   use_singularity: 'true'
@@ -19,24 +19,25 @@ CrossMap:
 min_gp: "0.85"  # Minimum genotype probability.  Values below this are converted to missing.
 snp_list: "accessory/ALL_snpLoc.txt"
 perform_QC: 'true'
-convert_coords: 'true' # Convert coordinates from hg38 to hg19?
+convert_coords: 'false' # Convert coordinates from hg38 to hg19?
 QC:
   Rsq_threshold: "0.5"  # Imputed variants with Rsq less than this threshold will be removed.  Set to 0 to disable filter.
   vm1: "0.2"
   gm: "0.1"
   vm2: "0.05"  # Ultimate call rate for variants after removing low-callrate samples
   maf: "0.01"  # mimimum Minor allele frequency
-  hwe: "0.0000001"  # p-value threshold for whether site follows hardy-weinberg
+  hwe: "-9"  # p-value threshold for whether site follows hardy-weinberg
   mbs: "0.0000001"  # p-value treshold for test of whether missingness varies by sex
 chroms: "all"
 include_x: "no"
 bcftools:
   executable: "bcftools"
   threads: '6'
+  plugins: '/usr/local/bin/miniconda/pkgs/bcftools-1.9-h68d8f2e_9/libexec/bcftools/'
 merge: "false"
 delete_intermediates: "false"
 cmd_prefix: "module load plink/1.90b6.10; module load htslib/1.6; module load bcftools/1.9;"
-python: 'python3.7'
+python: 'python'
 run_settings:
   local_run: 'false'
   cluster_config: 'workflow/cluster_slurm.yaml'

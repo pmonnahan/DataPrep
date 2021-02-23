@@ -32,7 +32,7 @@ library("magrittr")
 library("wrapr")
 library("stringr")
 library("foreach")
-library("pander")
+#library("pander")
 ```
 
 ```{r read_params, include=FALSE}
@@ -53,7 +53,7 @@ This report contains summary information of the process that was used to filter 
 The following datasets were used as input:
 
 ```{r input-datasets}
-yaml$query %>% as.data.frame() %.>% pivot_longer(., colnames(.), names_to = "Names", values_to = "Directory") %>% separate(Names,into = c("Dataset", "key"), "[.]") %>% filter(key=="data") %>% select(-key) %.>% pander::pander(., split.cell = 80, split.table = Inf)
+yaml$query %>% as.data.frame() %.>% pivot_longer(., colnames(.), names_to = "Names", values_to = "Directory") %>% separate(Names,into = c("Dataset", "key"), "[.]") %>% filter(key=="data") %>% select(-key) #%.>% pander::pander(., split.cell = 80, split.table = Inf)
 ```
 
 and the pipeline was carried out using the following singularity image:
@@ -107,7 +107,7 @@ Dat = foreach(i = 1:length(dat_files[[1]]), .combine=rbind) %do% {
   dat = read.table(dat_files[[1]][i], na.strings=".", fill = T)
   # We do 1 - freq below, so that we get REF frequency as reported in ref_freqs.txt
   #THIS NEXT STEP IS CRASHING RECENT RUNS WITH 32GB OF MEMORY.  It's the pivot call
-  dat = dat %>% pivot_longer(-c(V1,V2,V3), names_to="hap",values_to="allele") %>% group_by(V1,V2,V3) %>% summarize(freq = 1 - sum(allele,na.rm=T)/n(), datset=str_split(basename(dat_files[[1]][i]),"[.]")[[1]][1], dd = basename(dat_files[[1]][i]))
+  dat = dat %>% pivot_longer(-c(V1,V2,V3), names_to="hap",values_to="allele") %>% group_by(V1,V2,V3) %>% summarize(freq = sum(allele,na.rm=T)/n(), datset=str_split(basename(dat_files[[1]][i]),"[.]")[[1]][1], dd = basename(dat_files[[1]][i]))
   dat %<>% mutate(chrom=V1,pos=V2,ID=V3)
   dat
 }

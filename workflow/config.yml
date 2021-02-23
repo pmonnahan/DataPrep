@@ -1,7 +1,7 @@
 #Modify all lines indicated with MODIFY
 samples: "all"  # This can be set to path of file containing individuals to be kept from merged query file. One sample per line.
 outname: "ALL"
-query:
+query: #DO NOT USE PERIODS OR UNDERSCORES WHEN NAMING DATASETS
   "cog1":
     data: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.genotype-calls-matrixfmt.c1.HMB/with_fam/cog9904_9905_snp6_with_fam"
     chrom_key: "/home/pmonnaha/pmonnaha/misc/PlinkChrRename.txt"
@@ -39,6 +39,7 @@ singularity:
   use_singularity: 'true'
 case_datasets: "aall0232,cog1,cog2,stjude"
 control_datasets: "aric"
+pheno_data: "none"
 FixRef: 'true'
 download_reference: 'false'
 reference:
@@ -58,12 +59,13 @@ include_x: "no"
 bcftools:
   executable: "bcftools"
   threads: '6'
+  plugins: '/usr/local/bin/miniconda/pkgs/bcftools-1.9-h68d8f2e_9/libexec/bcftools/'
 merge: "true"
 delete_intermediates: "false"
 cmd_prefix: "module load plink/1.90b6.10; module load htslib/1.6; module load bcftools/1.9;"
-python: 'python3.7'
+python: 'python'
 run_settings:
   local_run: 'false'
-  cluster_config: 'workflow/cluster.yaml'
-  scheduler: 'pbs'
+  cluster_config: 'workflow/cluster_slurm.yaml'
+  scheduler: 'slurm'
 

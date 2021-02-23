@@ -30,16 +30,29 @@ The purpose of this pipeline is to convert(/combine) one or more imputed dataset
 ## Requirements
 
 ### Snakemake
-The pipeline is coordinated and run on an HPC (or locally) using _Snakemake_.  On UMN's HPC, snakemake can be installed by:
-
+The pipeline is coordinated and run on an HPC (or locally) using _Snakemake_.  To install snakemake, first create a virtual environment via:
+  
     module load python3/3.6.3_anaconda5.0.1
-    conda install -c conda-forge -c bioconda snakemake python=3.6
+    conda create -n <environment_name> pandas
+  
+This will create a new virtual environment and install `pandas`, which is required for running the pipeline.  Then, snakemake can be installed by:
 
-The 'module load' command will likely need to be run each time prior to use of Snakemake.
+    conda activate <environment_name>
+    conda install -c conda-forge -c bioconda snakemake python=3.6
 
 Alternatively, you can try installing snakemake via _pip_:
 
     pip3 install --user snakemake pyaml
+    
+You will also need to install `numpy` and `yaml` packages
+
+    conda install numpy yaml
+    
+  Anytime you need to run the pipeline, activate this environment beforehand via:
+
+    conda activate <environment_name>
+
+If you choose not to create an environment, you must ensure that pandas is installed and available for your python installation.
 
 ### Singularity
 

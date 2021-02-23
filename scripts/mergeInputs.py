@@ -101,42 +101,42 @@ if __name__ == "__main__":
 
     files = args.i.split(",")
 
-    indir_dict = {}
-    with open(f"{args.d}/{args.o}_files2merge.txt", 'w') as merge_file: # Do dup dropping as optional step in here and then can sub modded file into merge file spot
+    indir_dict = {} #This dictionary will hold directory and filenames for the input datasets.
+    with open(f"{args.d}/{args.o}_files2merge.txt", 'w') as merge_file: # Create file with list of datasets to ultimately be merged
         for file in files:
-            if args.drop_pos_dups:
+            if args.drop_pos_dups: #Optionally drop duplicate positions.  Helpful for removing multiallelic variants and indels in imputed data
                 df = pd.read_csv(f"{file.strip()}.bim", sep=r"\s+", header=None, dtype=str)
-                df.drop_duplicates(3, keep=False, inplace=True)
-                df[1].to_csv(f"{args.d}/{file.strip()}_unique", sep="\t", index=False, header=False)
-                var_flt(f"{args.d}/{file.strip()}", f"{args.d}/{file.strip()}_unique", f"{args.d}/{file.strip()}.unq", args.p, args.r)
+                df.drop_duplicates(3, keep=False, inplace=True) #Find duplicate positions
+                df[1].to_csv(f"{args.d}/{file.strip()}_unique", sep="\t", index=False, header=False) #Write duplicates to file for exclusion
+                var_flt(f"{args.d}/{file.strip()}", f"{args.d}/{file.strip()}_unique", f"{args.d}/{file.strip()}.unq", args.p, args.r) #Filter duplicates
                 merge_file.write(f"{args.d}/{file.strip()}.unq\n")
                 indir_dict[os.path.basename(file.strip()) + ".unq"] = os.path.dirname(file)
             else:
                 merge_file.write(f"{args.d}/{file.strip()}\n")
                 indir_dict[os.path.basename(file.strip())] = os.path.dirname(file)
 
-    DF_dict = read_bims(f"{args.d}/{args.o}_files2merge.txt")
+    DF_dict = read_bims(f"{args.d}/{args.o}_files2merge.txt") #Read in all BIM files
 
     # Identify merge issues before they occur.  SNPs with matching positions but different names.  Matching SNPs where strand is flipped. e.g. A-G in one is T-C in the other
-    Names_dict = {}
-    Flips_dict = {}
+    Names_dict = {} #Dictionary holding variants with mismatching names
+    Flips_dict = {} #Dictionary holding SNPs that need to be flipped
     Pos_dict = {}  # If dropping positional duplicates, then updating variant IDs and strand is not necessary.  HOWEVER, the attempts above, to identify and remove positional duplicates resulting from multiline multiallelic variants will miss instances where the alternative allele differes across populations.  That is, the variant is biallelic within each population, but with a different alternative allele.  In these cases, we want to identify all naming conflicts and remove them.
-    for i, comb in enumerate(itertools.combinations(DF_dict.keys(), r=2)):
+    for i, comb in enumerate(itertools.combinations(DF_dict.keys(), r=2)): #Loop over all pairwise combinations of BIM files
         if i==0:  # Hold first data frame as the reference and flip needed sites in subsequent data frames with respect to constant reference
             reference = comb[0]
-        # pdb.set_trace()
         df1 = DF_dict[comb[0]]
         df2 = DF_dict[comb[1]]
         df = pd.merge(df1, df2, on=(0, 3))  # Merging on chromosome and position
-        # pdb.set_trace()
         # TODO: need to catch when names match, alleles match, but positions do not.
         bad_names = df[df['1_x'] != df['1_y']]  # Check if variant IDs match
         # Check if, for variants with matching position and non-matching names, are ALL alleles the different (indicating a flip strand).
         bad_names_flips = bad_names[(bad_names['4_x'] != bad_names['4_y']) & (bad_names['4_x'] != bad_names['5_y']) & (bad_names['5_x'] != bad_names['4_y']) & (bad_names['5_x'] != bad_names['5_y'])]
 
-        df_b = pd.merge(df1, df2, on=1)
+        df_b = pd.merge(df1, df2, on=1) #Merge on variant ID to check for flipped strands
+        #Identify obvious strand flips (i.e. A/G or C/T polymorphism).  NOTE: this process will not catch A/T or C/G polymorphism
         good_names_flips = df_b[(df_b['4_x'] != df_b['4_y']) & (df_b['4_x'] != df_b['5_y']) & (df_b['5_x'] != df_b['4_y']) & (df_b['5_x'] != df_b['5_y'])]
-        good_names_all_conflicts = df_b[(df_b['4_x'] != df_b['4_y']) | (df_b['5_x'] != df_b['5_y'])]
+        good_names_all_conflicts = df_b[(df_b['4_x'] != df_b['4_y']) | (df_b['5_x'] != df_b['5_y'])] #Conservative list that identifies any allele conflicts.  Used when removing any positional duplicates that don't have perfect match
+
         # Record all name conflicts in case we want to delete all positional duplicates later
         try:
             Pos_dict[comb[1]] += list(bad_names['1_y'])
@@ -149,15 +149,14 @@ if __name__ == "__main__":
             Pos_dict[comb[1]] += list(good_names_all_conflicts[1])
             Pos_dict[comb[0]] += list(good_names_all_conflicts[1])
 
-        if comb[0] == reference:
-            Names_dict[comb[1]] = bad_names[['1_y', '1_x']]
+        if comb[0] == reference: #This ensures that all flipped strands are done with respect to the same dataset.
+            Names_dict[comb[1]] = bad_names[['1_y', '1_x']] #Store misnamed variants
             flips = list(good_names_flips[1]) + list(bad_names_flips['1_x'])  # SNP ids to be flipped should be specified in terms of reference ids bc
-            Flips_dict[comb[1]] = flips
+            Flips_dict[comb[1]] = flips #Store flipped strands
 
     # harmonize SNPids across data sets OR just exclude name conflicts (which will be multiline multiallelic variants)
     with open(f"{args.d}/{args.o}_files2premerge.txt", 'w') as mergefile:
         arg_list4 = []
-        # pdb.set_trace()
         if not args.drop_pos_dups:
             mergefile.write(f"{indir_dict[reference]}/{reference}\n")
             for name, data in Names_dict.items():
@@ -176,18 +175,18 @@ if __name__ == "__main__":
                     mergefile.write(f"{indir_dict[name]}/{name}.unq2\n")
                 else: mergefile.write(f"{indir_dict[name]}/{name}\n")
 
+    #Flip or filter SNPs identified in above steps
     if args.drop_pos_dups and arg_list4:
         outs = parallelQC(arg_list4, 1, function="exclude_variants")
     else:
         outs = parallelQC(arg_list4, 1, function="flipstrand_and_updateID")
-    # pdb.set_trace()
-    DF_dict = read_bims(f"{args.d}/{args.o}_files2premerge.txt")
+    DF_dict = read_bims(f"{args.d}/{args.o}_files2premerge.txt") #Read in SNPs from each dataset following flip or filter
 
-    #Losing LOTS of SNPs here.
-    # Poor overlap between aric and stjude/cog9906
+    #Merge BIM files based on variant ID
     df = reduce(lambda df1, df2: pd.merge(df1, df2, on=1), DF_dict.values())
-    df[1].to_csv(f"{args.d}/{args.o}_mergeSNPs.txt", header=False, index=False)
+    df[1].to_csv(f"{args.d}/{args.o}_mergeSNPs.txt", header=False, index=False) #Extract overlapping SNPs across all dataset
 
+    #Filter datasets to only overlapping variants
     arg_list5 = []
     with open(f"{args.d}/{args.o}_files2merge.txt", 'w') as mergefile:
         with open(f"{args.d}/{args.o}_files2premerge.txt", 'r') as premerge:
@@ -198,14 +197,8 @@ if __name__ == "__main__":
 
     outs = parallelQC(arg_list5, 1, function="var_flt")
 
-    # First merge attempt is likely to have strand flip errors
+    # Attempt to merge the filtered datasets.
     out1, err1 = merge_files(f"{args.d}/{args.o}_files2merge.txt", len(files), f"{args.d}/{args.o}", args.m, samples=args.s, plink=args.p, rsrc_str=args.r)
-
-    # Restore Ref/Alt alleles using bim file of first dataset?
-
-
-
-    # TODO: perform flip-scan via plink to look for incorrect strand assignment in a subset of sample after finding best-flipped combon
 
 
 

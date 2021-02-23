@@ -62,9 +62,10 @@ cd ${WorkingDir}
 mkdir -p ./TEMP
 
 # bgzip Fasta file
-zcat "${RefFasta}" | bgzip > tmp.fasta.gz
-
-RefFasta="tmp.fasta.gz"
+#echo "${RefFasta}"
+#zcat "${RefFasta}" | bgzip > tmp.fasta.gz
+#
+#RefFasta="tmp.fasta.gz"
 
 if [ ! -f "${RefVCF}.tbi" ]; then
     tabix -p vcf "${RefVCF}"
@@ -80,7 +81,7 @@ if [ "${DataPrepStep1}" == "t" ]; then
   printf "\n\nConverting $RawData Plink files into VCF format \n"
   echo ----------------------------------------------
   echo
-  echo
+  echo "${Plink_Exec} --bfile $RawData --recode vcf --out ./TEMP/DataFixStep1_${BASE}"
 
   ${Plink_Exec} --bfile $RawData --recode vcf --out ./TEMP/DataFixStep1_${BASE}
 
@@ -89,7 +90,7 @@ if [ "${DataPrepStep1}" == "t" ]; then
   printf "\n\nConverting VCF into a BCF with chromosome names that match the reference .fasta annotation \n\nNOTE: You may need to manually adjust chromosome key depending on the fasta reference you use in order to match the chromosome names \n"
   echo ----------------------------------------------
   echo
-  echo
+  echo "${bcftools_Exec} annotate -Ob --rename-chrs ${ChromKey} ./TEMP/DataFixStep1_${BASE}.vcf > ./TEMP/DataFixStep1_${BASE}.bcf"
 
   ${bcftools_Exec} annotate -Ob --rename-chrs ${ChromKey} ./TEMP/DataFixStep1_${BASE}.vcf > ./TEMP/DataFixStep1_${BASE}.bcf
 
@@ -111,7 +112,7 @@ if [ "${DataPrepStep2}" == "t" ]; then
     printf "\n\nRun bcftools +fixref to first view the number of correctly annotated/aligned variants to the Reference annotation \n"
     echo ----------------------------------------------
     echo
-    echo
+    echo "${bcftools_Exec} +fixref ./TEMP/DataFixStep1_${BASE}.bcf -- -f ${RefFasta}"
 
     ${bcftools_Exec} +fixref ./TEMP/DataFixStep1_${BASE}.bcf -- -f ${RefFasta}
 
@@ -119,7 +120,7 @@ if [ "${DataPrepStep2}" == "t" ]; then
     printf "\n\nRun bcftools +fixref to fix allels based on the downloaded annotation file \n"
     echo ----------------------------------------------
     echo
-    echo
+    echo "${bcftools_Exec} +fixref ./TEMP/DataFixStep1_${BASE}.bcf -Ob -o ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf -- -d -f ${RefFasta} -i ${RefVCF}"
 
     ${bcftools_Exec} +fixref ./TEMP/DataFixStep1_${BASE}.bcf -Ob -o ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf -- -d -f ${RefFasta} -i ${RefVCF}
 
@@ -127,7 +128,7 @@ if [ "${DataPrepStep2}" == "t" ]; then
     printf "\n\nRun bcftools +fixref to see if the file has been fixed - all alleles are matched and all unmatched alleles have been dropped \n"
     echo ----------------------------------------------
     echo
-    echo
+    echo "${bcftools_Exec} +fixref ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf -- -f ${RefFasta}"
 
     ${bcftools_Exec} +fixref ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf -- -f ${RefFasta}
 #  fi
@@ -143,6 +144,7 @@ if [ "${DataPrepStep3}" == "t" ]; then
 # Sort the BCF output
   printf "\n\nSorting the BCF output since fixing it may have made it unsorted \n"
   echo ----------------------------------------------
+  echo "(${bcftools_Exec} view -h ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf; ${bcftools_Exec} view -H ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf | sort -k1,1d -k2,2n -T ./TEMP/;) | ${bcftools_Exec} view -Ob -o ./TEMP/DataFixStep3_${BASE}-RefFixedSorted.bcf"
 
   (${bcftools_Exec} view -h ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf; ${bcftools_Exec} view -H ./TEMP/DataFixStep2_${BASE}-RefFixed.bcf | sort -k1,1d -k2,2n -T ./TEMP/;) | ${bcftools_Exec} view -Ob -o ./TEMP/DataFixStep3_${BASE}-RefFixedSorted.bcf
 
@@ -152,7 +154,7 @@ if [ "${DataPrepStep3}" == "t" ]; then
   printf "\n\nConverting Fixed and Sorted BCF back into Plink .bed/.bim/.fam \n"
   echo ----------------------------------------------
   echo
-  echo
+  echo "${Plink_Exec} --bcf ./TEMP/DataFixStep3_${BASE}-RefFixedSorted.bcf --keep-allele-order --make-bed --out ./TEMP/DataFixStep3_${BASE}-RefFixSorted"
 
   ${Plink_Exec} --bcf ./TEMP/DataFixStep3_${BASE}-RefFixedSorted.bcf --keep-allele-order --make-bed --out ./TEMP/DataFixStep3_${BASE}-RefFixSorted
 
@@ -164,7 +166,7 @@ if [ "${DataPrepStep3}" == "t" ]; then
   printf "\n\nFinding Positional and Allelic Duplicates \n"
   echo ----------------------------------------------
   echo
-  echo
+  echo "${Plink_Exec} --bfile ./TEMP/DataFixStep3_${BASE}-RefFixSorted --list-duplicate-vars ids-only suppress-first --out ./TEMP/Dups2Remove"
 
   ${Plink_Exec} --bfile ./TEMP/DataFixStep3_${BASE}-RefFixSorted --list-duplicate-vars ids-only suppress-first --out ./TEMP/Dups2Remove
 
@@ -174,7 +176,7 @@ if [ "${DataPrepStep3}" == "t" ]; then
   printf "\n\nRemoving Positional and Allelic Duplicates if they exist\nFound ${DuplicateNumber} Duplicate Variant/s\n"
   echo ----------------------------------------------
   echo
-  echo
+  echo "${Plink_Exec} --bfile ./TEMP/DataFixStep3_${BASE}-RefFixSorted --keep-allele-order --exclude ./TEMP/Dups2Remove.dupvar --make-bed --out ./TEMP/DataFixStep4_${BASE}-RefFixSortedNoDups"
 
   ${Plink_Exec} --bfile ./TEMP/DataFixStep3_${BASE}-RefFixSorted --keep-allele-order --exclude ./TEMP/Dups2Remove.dupvar --make-bed --out ./TEMP/DataFixStep4_${BASE}-RefFixSortedNoDups
 
@@ -185,7 +187,7 @@ if [ "${DataPrepStep3}" == "t" ]; then
   printf "\n\nRestoring Sample Sex Information \n"
   echo ----------------------------------------------
   echo
-  echo
+  echo "${Plink_Exec} --bfile ./TEMP/DataFixStep4_${BASE}-RefFixSortedNoDups --update-sex ${RawData}.fam 3 --make-bed --out ${OUTPRE}"
 
   ${Plink_Exec} --bfile ./TEMP/DataFixStep4_${BASE}-RefFixSortedNoDups --update-sex ${RawData}.fam 3 --make-bed --out ${OUTPRE}
 
@@ -215,6 +217,6 @@ if [ "${SaveDataPrepIntermeds}" == "f" ]; then
 
 fi
 
-rm tmp.fasta.gz
+#rm tmp.fasta.gz
 
 
