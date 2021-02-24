@@ -52,10 +52,13 @@ def calc_stats(bfile, plink, rsrc_str):
     cmd = f"{plink} --bfile {bfile} --freq --missing --hardy --mpheno 3 --pheno {bfile}.fam --test-missing --out {bfile} {rsrc_str}"
     pp1 = subprocess.Popen(cmd, shell=True)  # Run cmd1
     out1, err1 = pp1.communicate()  # Wait for it to finish
+    cmd = f"{plink} --bfile {bfile} --pheno {bfile}.fam --test-missing --out {bfile}.caseControl {rsrc_str}; mv {bfile}.caseControl.missing {bfile}.caseControlmissing"
+    pp1 = subprocess.Popen(cmd, shell=True)  # Run cmd1
+    out1, err1 = pp1.communicate()  # Wait for it to finish
 
     return(out1, err1)
 
-def wrapQC(input, output, tvm1, tgm, tvm2, maf, hwe, mbs, plink, rsrc_str, snps_only=False):
+def wrapQC(input, output, tvm1, tgm, tvm2, maf, hwe, mbs, mbc, plink, rsrc_str, snps_only=False):
 
     out1, err1 = var_miss(input, tvm1, f"{output}.var_miss{tvm1}", plink, rsrc_str)
     out2, err2 = geno_miss(f"{output}.var_miss{tvm1}", tgm, f"{output}.geno_miss{tgm}", plink, rsrc_str)
@@ -64,8 +67,8 @@ def wrapQC(input, output, tvm1, tgm, tvm2, maf, hwe, mbs, plink, rsrc_str, snps_
 
     out2, err2 = calc_stats(f"{output}.geno_flt{tgm}", plink, rsrc_str)
     DF_list = []
-    flt_strings = {'frq': f"frq_MAF < {maf}", 'hwe': f"hwe_P < {hwe}", 'lmiss': f"lmiss_F_MISS > {tvm2}", 'missing': f"missing_P < {mbs}"}
-    for stat in ['frq', 'hwe', 'lmiss', 'missing']:
+    flt_strings = {'frq': f"frq_MAF < {maf}", 'hwe': f"hwe_P < {hwe}", 'lmiss': f"lmiss_F_MISS > {tvm2}", 'missing': f"missing_P < {mbs}", 'caseControlmissing': f"caseControlmissing_P < {mbc}"}
+    for stat in ['frq', 'hwe', 'lmiss', 'missing', 'caseControlmissing']:
         try:
             tdf = pd.read_csv(f"{output}.geno_flt{tgm}.{stat}", sep = r"\s+")
             tdf = tdf.add_prefix(f"{stat}_")
@@ -106,6 +109,8 @@ if __name__ == "__main__":
                         help='')
     parser.add_argument('-mbs', type=str, metavar='missingness_by_sex', default=0.0000001,
                         help='')
+    parser.add_argument('-mbc', type=str, metavar='missingness_by_caseControl', default=0.0000001,
+                        help='')
     parser.add_argument('-hwe', type=str, metavar='p_value_cutoff_HWEtest', default=-1,
                         help='')
     parser.add_argument('-r', type=str, metavar='resource_string', default='--memory 16000 --threads 1',
@@ -122,6 +127,6 @@ if __name__ == "__main__":
     if args.p == "plink":
         args.p = spawn.find_executable(args.p)
     if args.snps_only:
-        wrapQC(args.i, f"{args.d}/{args.o}", args.tvm1, args.tgm, args.tvm2, args.maf, args.hwe, args.mbs, args.p, args.r, snps_only=True)
+        wrapQC(args.i, f"{args.d}/{args.o}", args.tvm1, args.tgm, args.tvm2, args.maf, args.hwe, args.mbs, args.mbc, args.p, args.r, snps_only=True)
     else:
-        wrapQC(args.i, f"{args.d}/{args.o}", args.tvm1, args.tgm, args.tvm2, args.maf, args.hwe, args.mbs, args.p, args.r)
+        wrapQC(args.i, f"{args.d}/{args.o}", args.tvm1, args.tgm, args.tvm2, args.maf, args.hwe, args.mbs, args.mbc, args.p, args.r)

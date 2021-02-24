@@ -1,50 +1,33 @@
 #Modify all lines indicated with MODIFY
 samples: "all"  # This can be set to path of file containing individuals to be kept from merged query file. One sample per line.
-outname: "ALL"
-query: #DO NOT USE PERIODS OR UNDERSCORES WHEN NAMING DATASETS
-  "cog1":
-    data: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.genotype-calls-matrixfmt.c1.HMB/with_fam/cog9904_9905_snp6_with_fam"
-    chrom_key: "/home/pmonnaha/pmonnaha/misc/PlinkChrRename.txt"
-    allele_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/recodePlinkAlleles.txt"
-    ID_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/recodePlinkMarkers_noDups.txt"
-    flip_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/opposite_strands_ssIDs.txt"
-  "cog2":
-    data: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.genotype-calls-matrixfmt.c1.HMB/with_fam/cog9906_500K_with_fam"
-    chrom_key: "/home/pmonnaha/pmonnaha/misc/PlinkChrRename.txt"
-    allele_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/recodePlinkAlleles.txt"
-    ID_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/recodePlinkMarkers_noDups.txt"
-    flip_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/opposite_strands_ssIDs.txt"
-  "stjude":
-    data: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.genotype-calls-matrixfmt.c1.HMB/with_fam/stjude_500K_with_fam"
-    chrom_key: "/home/pmonnaha/pmonnaha/misc/PlinkChrRename.txt"
-    allele_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/recodePlinkAlleles.txt"
-    ID_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/recodePlinkMarkers_noDups.txt"
-    flip_key: "/home/pmonnaha/shared/data/admiral/raw/phg000408.v1.NIGMS_ALL_Relapse_GWAS.marker-info.c.MULTI/opposite_strands_ssIDs.txt"
-  "aall0232":
-    data: "/home/pmonnaha/shared/data/admiral/aall0232/plink"
-    chrom_key: "/home/pmonnaha/pmonnaha/misc/PlinkChrRename.txt"
-    allele_key: "none"
-    ID_key: "none"
-    flip_key: "none"
-  "aric":
-    data: "/home/pmonnaha/shared/data/admiral/mergeALL_AA/QC_allRaces/aric"
-    chrom_key: "/home/pmonnaha/pmonnaha/misc/PlinkChrRename.txt"
-    allele_key: "none"
-    ID_key: "none"
-    flip_key: "none"
+outname: "ALL" #Name that you want to give to any output
+query: #!!ONLY USE TEXT AND NUMBERS FOR NAMING DATASETS.  List one or more datasets to be QCed via format demonstrated below.
+  "dataset1":
+    data: "PATH_TO_PLINK_PREFIX"
+    chrom_key: "/home/pmonnaha/shared/misc/PlinkChrRename.txt" # Required.  this is also downloaded to accessory directory upon cloning repo
+    allele_key: "PATH_TO_FILE_WITH_ACGT_SPECIFCATION" # Used for renaming A/B allele specification to ACGT specification (see PLINK documentation for format).  Set to 'none' if data already in ACGT
+    ID_key: "PATH_TO_FILE_WITH_rsIDs" #Used to relabel markers with the rsID (see PLINK documentation for format).  Set to 'none' if rsIDs already present
+    flip_key: "PATH_TO_FILE_WITH_rsIDs_TO_FLIP" #File with rsIDs to flip.  Typically retrieved from CSV file for array.  Set to 'none' if you are certain that strand is specified correctly.
+    pheno_file: "PATH_TO_FILE_WITH_PHENOTYPE_INFO" #If phenotypes are already specified or are not available, set this to 'none'.  Otherwise, format according to PLINK --update-pheno.
+    sex_file: "PATH_TO_FILE_WITH_SEX_INFO" #If sexes are already specified or are not available, set this to 'none'. Otherwise, format according to PLINK --update-sex.
+  "dataset2":
+    data: "PATH_TO_PLINK_PREFIX"
+    chrom_key: "/home/pmonnaha/shared/misc/PlinkChrRename.txt" # this is also downloaded to accessory directory upon cloning repo
+    allele_key: "PATH_TO_FILE_WITH_ACGT_SPECIFCATION" # Used for renaming A/B allele specification to ACGT specification (see PLINK documentation for format).  Set to 'none' if data already in ACGT
+    ID_key: "PATH_TO_FILE_WITH_rsIDs" #Used to relabel markers with the rsID (see PLINK documentation for format).  Set to 'none' if rsIDs already present
+    flip_key: "PATH_TO_FILE_WITH_rsIDs_TO_FLIP" #File with rsIDs to flip.  Typically retrieved from CSV file for array.  Set to 'none' if you are certain that strand is specified correctly.
+    pheno_file: "PATH_TO_FILE_WITH_PHENOTYPE_INFO" #If phenotypes are already specified or are not available, set this to 'none'.  Otherwise, format according to PLINK --update-pheno.
+    sex_file: "PATH_TO_FILE_WITH_SEX_INFO" #If sexes are already specified or are not available, set this to 'none'. Otherwise, format according to PLINK --update-sex.
 singularity:
-  image: '/home/pmonnaha/pmonnaha/singularity/AncestryInference.sif' # MODIFY
-  module: 'module load singularity'
-  code: 'scripts/'
-  use_singularity: 'true'
-case_datasets: "aall0232,cog1,cog2,stjude"
-control_datasets: "aric"
-pheno_data: "none"
+  image: '/home/pmonnaha/shared/singularity/AncestryInference.sif' # MODIFY: Path to singularity image file.  The one I used for everything is named AncestryInference.sif, which can be created from scratch using .def file in AncInf repo.
+  module: 'module load singularity' #Command that the HPC requires for use of singularity.  Set to empty string if singularity is loaded by default.
+  code: 'scripts/' #Path to the scripts directory that was cloned with repo.  Should not need to change this value.
+  use_singularity: 'true' #Use a singularity image (i.e. set to true) if possible.  Pipeline has only been tested/debugged with singularity.
 FixRef: 'true'
-download_reference: 'false'
+download_reference: 'true'
 reference:
-  refFasta: '/home/pmonnaha/pmonnaha/ALL_DataPrep/RefAnnotationData/human_g1k_v37.fasta.gz'
-  refVCF: '/home/pmonnaha/pmonnaha/ALL_DataPrep/RefAnnotationData/All_20170710.vcf.gz'
+  refFasta: "none"
+  refVCF: 'none'
 perform_QC: 'true'
 QC:
   vm1: "0.2"
@@ -53,7 +36,7 @@ QC:
   maf: "0.01"  # mimimum Minor allele frequency
   hwe: "0.0000001"  # p-value threshold for whether site follows hardy-weinberg
   mbs: "0.0000001"  # p-value treshold for test of whether missingness varies by sex
-  mbc: "0.0001"  # p-value threshold for missingness by case
+  mbc: "0.0001"  # p-value threshold for missingness by case. Note that this is applied to each dataset separately.  Testing subsequent to merging (if requested) must be done manually.
 chroms: "all"
 include_x: "no"
 bcftools:

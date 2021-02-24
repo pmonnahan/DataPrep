@@ -21,12 +21,15 @@ import FisherExact
 from math import ceil
 
 # Define Functions
-def calc_freqs(Cases, dataset, group, plink_file, min_ind, outdir, plink, rsrc_str):
+def calc_freqs(Cases, dataset, group, plink_file, min_ind, outdir, plink, rsrc_str, chromosome):
     cdat = Cases[Cases.Dataset == dataset]
     fname = f"{outdir}/{dataset}.{group}.samples"
     if cdat.shape[0] > min_ind:
         cdat[["FID", "IID"]].to_csv(fname, sep="\t", index=False)
-        cmd = f"{plink} --bfile {plink_file} --keep {fname} --hardy --maf 0.001 --out {outdir}/{dataset}.{group}.case {rsrc_str}"
+        if chromosome != "all":
+            cmd = f"{plink} --bfile {plink_file} --chr {chromosome} --keep {fname} --hardy --maf 0.001 --out {outdir}/{dataset}.{group}.case {rsrc_str}"
+        else:
+            cmd = f"{plink} --bfile {plink_file} --keep {fname} --hardy --maf 0.001 --out {outdir}/{dataset}.{group}.case {rsrc_str}"
         pp1 = subprocess.Popen(cmd, shell=True)  # Run cmd1
         out1, err1 = pp1.communicate()  # Wait for it to finish
         cmd = f"grep ALL {outdir}/{dataset}.{group}.case.hwe | awk '{{print $2,$6}}' | sed 's:/:\t:g' > {outdir}/{dataset}.{group}.case.genofreqs"
@@ -34,7 +37,7 @@ def calc_freqs(Cases, dataset, group, plink_file, min_ind, outdir, plink, rsrc_s
         out1, err1 = pp1.communicate()  # Wait for it to finish
     return()
 
-def wrap_freq(Dat, plink_file, min_ind, outdir, plink, rsrc_str, threads):
+def wrap_freq(Dat, plink_file, min_ind, outdir, plink, rsrc_str, threads, chromosome):
     for pheno in ['case','control']:
         for group in set(Dat.Group):
             if pheno == 'case': tDat = Dat[(Dat.Group == group) & (Dat.Phenotype == 2)]
@@ -42,7 +45,7 @@ def wrap_freq(Dat, plink_file, min_ind, outdir, plink, rsrc_str, threads):
             if len(set(tDat.Dataset)) > 1:
                 arg_list = []
                 for dataset in set(tDat.Dataset):
-                    arg_list.append((tDat, dataset, group, plink_file, min_ind, outdir, plink, rsrc_str))
+                    arg_list.append((tDat, dataset, group, plink_file, min_ind, outdir, plink, rsrc_str, chromosome))
                 pool = multiprocessing.Pool(threads)
                 pool.starmap(calc_freqs, arg_list)
                 pool.close()
@@ -113,6 +116,8 @@ if __name__ == "__main__":
     parser.add_argument('-i', type=str, metavar='plink_file', required=True, help='prefix to plink files (do not include the plink suffix')
     parser.add_argument('-m', type=int, metavar='min_individuals', default=10, help='Minimum number of individuals in a dataset required for batch testing')
     parser.add_argument('-t', type=str, metavar='pval_threshold', default="0.005", help='p-value threshold for batch effect test')
+    parser.add_argument('-C', type=str, metavar='chromosome', default="all",
+                        help='chromosome to consider; default is to consider all chromosomes, but splitting calculation by chromosome can greatly increase speed')
     parser.add_argument('-p', type=str, metavar='plink_path', default="plink", help='')
     parser.add_argument('-r', type=str, metavar='resource_string', default='--memory 8000 --threads 1',
                         help='string to be used to specify resources for plink. e.g. --memory 8000 --threads 1')
@@ -133,14 +138,14 @@ else: quickprint = False
 
 if not os.path.exists(args.o): os.mkdir(args.o)
 
-o1, e1 = wrap_freq(Dat, plink_file, min_ind, out, plink, rsrc_str, args.c)
+o1, e1 = wrap_freq(Dat, plink_file, min_ind, out, plink, rsrc_str, args.c, args.C)
 
 #TODO write separate function (or a quick print option) that prints to file as tests complete.  No reason to store the results the whole time.
 
 if not e1:
     for pheno in ['case', 'ctrl']:
-        # for group in set(Dat.Group):
-        for group in ["Black"]:
+        for group in set(Dat.Group):
+        #for group in ["Black"]:
             genofreq_path = f"{out}/{group}.{pheno}.genofreqs"
             Results = wrapTest(genofreq_path, args.c, quickprint=quickprint, threshold=threshold)
             if not quickprint:

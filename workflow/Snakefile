@@ -185,19 +185,37 @@ rule FixRef:  # Use bcftools +fixref to set reference vs alternate alleles
         else:
             shell(f"{CMD_PREFIX} plink --bfile {{params.prefix}}_flips --keep-allele-order --make-bed --out {{params.prefix}}-FixRef {plnk_rsrc(rule, plink_run_specs)}")
 
-rule QCcombine_query: #Run various QC steps
+rule set_pheno: #Set phenotypes
     input: "{rawdata}/tmp/{rawdata}-FixRef.bed"
+    output: "{rawdata}/{rawdata}-FixRef-pheno.bed"
+    run:
+        if os.path.exists(config['query'][wildcards.rawdata]['pheno_file']):
+            shell(f"{CMD_PREFIX} plink --bfile {wildcards.rawdata}/tmp/{wildcards.rawdata}-FixRef --pheno {config['query'][wildcards.rawdata]['pheno_file']} --keep-allele-order --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-FixRef-pheno")
+        else:
+            shell(f"{CMD_PREFIX} plink --bfile {wildcards.rawdata}/tmp/{wildcards.rawdata}-FixRef --pheno {QUERY['query'][wildcards.rawdata]['data']}.bim --mpheno 4 --keep-allele-order --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-FixRef-pheno")
+
+rule set_sex: #Set sex
+    input: "{rawdata}/{rawdata}-FixRef-pheno.bed"
+    output: "{rawdata}/{rawdata}-FixRef-pheno-sex.bed"
+    run:
+        if os.path.exists(config['query'][wildcards.rawdata]['sex_file']):
+            shell(f"{CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-FixRef-pheno --update-sex {config['query'][wildcards.rawdata]['sex_file']} --keep-allele-order --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-FixRef-pheno-sex")
+        else:
+            shell(f"{CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-FixRef-pheno --pheno {QUERY['query'][wildcards.rawdata]['data']}.bim --mpheno 3 --keep-allele-order --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-FixRef-pheno-sex")
+
+rule QCcombine_query: #Run various QC steps
+    input: "{rawdata}/{rawdata}-FixRef-pheno-sex.bed"
     output: "{rawdata}/{rawdata}-QC.bed"
     params:
         pre1 = "{rawdata}/tmp/{rawdata}",
         pre2 = "{rawdata}/{rawdata}",
         tvm1 = config['QC']['vm1'], tgm = config['QC']['gm'], tvm2 = config['QC']['vm2'],
-        hwe = config['QC']['hwe'], maf = config['QC']['maf'], mbs = config['QC']['mbs'],
+        hwe = config['QC']['hwe'], maf = config['QC']['maf'], mbs = config['QC']['mbs'], mbc = config['QC']['mbc'],
     run:
         if config['perform_QC'] == 'true':
             with open("scripts/QCcombine_query.sh", 'w') as QCsh:
                 cmd = f"{CMD_PREFIX} {PYTHON} {CODE}/QC.py -i {{params.pre1}}-FixRef -d {{wildcards.rawdata}}/tmp/ -o {{wildcards.rawdata}}-QC " \
-                      f"-p plink -tvm1 {{params.tvm1}} -tgm {{params.tgm}} -tvm2 {{params.tvm2}} -hwe {{params.hwe}} -mbs {{params.mbs}} -maf {{params.maf}} -r '{plnk_rsrc(rule, plink_run_specs)}'; " \
+                      f"-p plink -tvm1 {{params.tvm1}} -tgm {{params.tgm}} -tvm2 {{params.tvm2}} -hwe {{params.hwe}} -mbc {{params.mbc}} -mbs {{params.mbs}} -maf {{params.maf}} -r '{plnk_rsrc(rule, plink_run_specs)}'; " \
                       f"mv {{params.pre1}}-QC.bed {{wildcards.rawdata}}; mv {{params.pre1}}-QC.bim {{wildcards.rawdata}}; " \
                       f"mv {{params.pre1}}-QC.fam {{wildcards.rawdata}};"
                 if config['delete_intermediates'] == 'true': cmd += f"rm -r {{wildcards.rawdata}}/tmp/"
@@ -215,35 +233,22 @@ rule restore_strand: #This step ensures that the A2 allele specification is main
         else: bim_file = f"{{wildcards.rawdata}}/tmp/{{wildcards.rawdata}}_flips.bim"
         shell(f"{CMD_PREFIX} plink --bfile {{params.pre2}}-QC --make-bed --a2-allele {bim_file} 6 2 --out {{params.pre2}}-QC-Ref {plnk_rsrc(rule, plink_run_specs)}")
 
-rule set_pheno: #Set phenotypes
-    input: "{rawdata}/{rawdata}-QC-Ref.bed"
-    output: "{rawdata}/{rawdata}-QC-Ref-pheno.bed"
-    run:
-        if os.path.exists(config['pheno_data']):
-            shell(f"{CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref --pheno {config['pheno_data']} --keep-allele-order --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-pheno")
-        else:
-            shell(f"{CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref --keep-allele-order --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-pheno")
-        if f"{wildcards.rawdata}" in config['case_datasets'].strip().split(","):
-            shell("{CMD_PREFIX} sed -i 's/-9$/2/' {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-pheno.fam; touch {output}")
-        elif f"{wildcards.rawdata}" in config['control_datasets'].strip().split(","):
-            shell("{CMD_PREFIX} sed -i 's/-9$/1/' {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-pheno.fam; touch {output}")
-
-rule filter_missingness_by_case: #Test for an association between missingness and case/control status
-    input: "{rawdata}/{rawdata}-QC-Ref-pheno.bed"
-    output: "{rawdata}/{rawdata}-QC-Ref_mbc.bed"
-    run:
-        import pandas as pd
-        shell(f"{CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref --test-missing --allow-no-sex --out {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref")
-        try: mbc = pd.read_table(f"{wildcards.rawdata}/{wildcards.rawdata}-QC-Ref.missing", sep = r"\s+") #Above plink command will error out if dataset contains only cases or controls
-        except FileNotFoundError: #Accommodate potential plink errors
-            mbc = pd.DataFrame(data={"P":[99],"SNP":["-99"]})
-        dat = mbc[mbc['P'] < float(config['QC']['mbc'])]['SNP'].drop_duplicates() #Find SNPs that have p-value below threshold from config file
-        dat.to_csv(f'{wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_missing_filter.txt', header=False,index=False)
-        shell(f"{CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-pheno --exclude {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_missing_filter.txt --keep-allele-order --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_mbc") #Filter SNPs
+# rule filter_missingness_by_case: #Test for an association between missingness and case/control status
+#     input: "{rawdata}/{rawdata}-QC-Ref-pheno.bed"
+#     output: "{rawdata}/{rawdata}-QC-Ref_mbc.bed"
+#     run:
+#         import pandas as pd
+#         shell(f"{CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref --test-missing --allow-no-sex --out {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref")
+#         try: mbc = pd.read_table(f"{wildcards.rawdata}/{wildcards.rawdata}-QC-Ref.missing", sep = r"\s+") #Above plink command will error out if dataset contains only cases or controls
+#         except FileNotFoundError: #Accommodate potential plink errors
+#             mbc = pd.DataFrame(data={"P":[99],"SNP":["-99"]})
+#         dat = mbc[mbc['P'] < float(config['QC']['mbc'])]['SNP'].drop_duplicates() #Find SNPs that have p-value below threshold from config file
+#         dat.to_csv(f'{wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_missing_filter.txt', header=False,index=False)
+#         shell(f"{CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-pheno --exclude {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_missing_filter.txt --keep-allele-order --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_mbc") #Filter SNPs
 
 
 rule merge_inputs: #Optionally, merge together the different datasets provided.
-    input: expand("{rawdata}/{rawdata}-QC-Ref_mbc.bed", rawdata=QUERY.keys())
+    input: expand("{rawdata}/{rawdata}-QC-Ref.bed", rawdata=QUERY.keys())
     output: f"{OUT}.bed"
     params:
         input_list = ",".join([f"{x}/{x}-QC-Ref" for x in QUERY.keys()])
