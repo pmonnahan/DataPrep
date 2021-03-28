@@ -107,7 +107,7 @@ Dat = foreach(i = 1:length(dat_files[[1]]), .combine=rbind) %do% {
   dat = read.table(dat_files[[1]][i], na.strings=".", fill = T)
   # We do 1 - freq below, so that we get REF frequency as reported in ref_freqs.txt
   #THIS NEXT STEP IS CRASHING RECENT RUNS WITH 32GB OF MEMORY.  It's the pivot call
-  dat = dat %>% pivot_longer(-c(V1,V2,V3), names_to="hap",values_to="allele") %>% group_by(V1,V2,V3) %>% summarize(freq = sum(allele,na.rm=T)/n(), datset=str_split(basename(dat_files[[1]][i]),"[.]")[[1]][1], dd = basename(dat_files[[1]][i]))
+  dat = dat %>% pivot_longer(-c(V1,V2,V3), names_to="hap",values_to="allele") %>% group_by(V1,V2,V3) %>% summarize(freq = 1 - sum(allele,na.rm=T)/n(), datset=str_split(basename(dat_files[[1]][i]),"[.]")[[1]][1], dd = basename(dat_files[[1]][i]))
   dat %<>% mutate(chrom=V1,pos=V2,ID=V3)
   dat
 }
@@ -116,6 +116,7 @@ Dat %>% left_join(ref, by=c("chrom","pos","ID")) %>% ggplot(aes(x=freq.x,y=as.nu
 
 ```
 
+Note that this assumes that the allele frequency in the reference VCF is specified in terms of the reference allele (as is the case for the hg19 1000Genomes data).  If the allele frequency is specified in terms of the alternative allele, then an anti-correlation will result.  If an anti-correlation is solely observed (i.e. plot is not a mix of positive and negative correlation; an X), this may be a good indicator that strands are correct, as long as one can confirm the allele frequency specification.
 
 ## Dataset QC
 

@@ -100,7 +100,6 @@ totals %>% ggplot(aes(y=V4/1000000,x=Chromosome,fill=Chromosome)) + geom_bar(sta
 # Coordinate Conversion
 The program \href{http://crossmap.sourceforge.net/}{{\color{blue}{\underline{CrossMap}}}} was optionally used to convert coordinates from GRCh38 to GRCh19.  If the following flag was set to true in the config file, then coordinate conversion was performed:
 
-Reference Fasta
 ```{r convert_coords}
 yaml$convert_coords
 ```
@@ -124,7 +123,7 @@ if (nrow(chrom_file[chrom_file$V3=="unmap",]) > 0){
 ```
 The proportion here is calculated for each chromosome as:  #unmapped / (#mapped + #unmapped). Unmapped variants were removed from subsequent steps.  No figure is produced if coordinate conversion was disabled.
 \newpage
-ca
+
 # PLINK Conversion and initial QC
 Following coordinate conversion, the VCFs for each chromosome are converted to plink format.  During this conversion, poorly imputed genotypes are set to missing.  That is, if the probability of the most probable genotype falls below the following threshold, then the genotype for this sample is set to missing.
 
@@ -150,7 +149,8 @@ yaml$QC$gm
 
 ```{r chrom-filter-stats, fig.cap = "Proportion of total imputed sites removed by each filter.", fig.height = 5.5, fig.width = 7, warning=FALSE, message=FALSE}
 
-chrom_file %>% filter(!V3 %in% c("frq")) %>% pivot_wider(id_cols=c("V1","V2"),names_from="V3",values_from="V4",values_fn=mean) %>% mutate(Dataset=V1,Chromosome=V2, HWE = hwe/raw, Missingness=lmiss/raw,Total=txt/raw,Duplicates=dupvar/raw,Indels = (txt - lmiss - dupvar)/raw) %>% select(c(Dataset,Chromosome,HWE,Missingness,Duplicates,Indels)) %>% pivot_longer(c(HWE,Missingness,Duplicates,Indels),names_to = "Filter", values_to = "Proportion") %>% ggplot(aes(x=Dataset,fill=Filter,y=Proportion)) + geom_bar(stat="identity") + facet_wrap(~Chromosome) + theme(axis.text.x=element_text(angle=45,hjust=1))
+chrom_file %>% filter(!V3 %in% c("frq")) %>% pivot_wider(id_cols=c("V1","V2"),names_from="V3",values_from="V4",values_fn=mean) %>% mutate(Dataset=V1,Chromosome=V2, HWE = hwe/raw, Missingness=lmiss/raw,MBS=missing/raw,MBC=
+caseControlmissing/raw,Total=txt/raw,Duplicates=dupvar/raw,Indels = (txt - lmiss - dupvar - missing - caseControlmissing)/raw) %>% select(c(Dataset,Chromosome,HWE,Missingness,MBS,MBC,Duplicates,Indels)) %>% pivot_longer(c(HWE,Missingness,MBS,MBC,Duplicates,Indels),names_to = "Filter", values_to = "Proportion") %>% ggplot(aes(x=Dataset,fill=Filter,y=Proportion)) + geom_bar(stat="identity") + facet_wrap(~Chromosome) + theme(axis.text.x=element_text(angle=45,hjust=1))
 ```
 Note: the proportion of variants removed due to missingness may be appear artificially small here.  Nonvariant sites, which make up vast majority of imputed variants tend to be imputed with high probability, which translates to low missingness.  Indels includes multiallelic variants as well, which are the vast minority. 
 

@@ -22,27 +22,25 @@ QUERY = config['query']
 BCFTOOLS = config['bcftools']['executable']
 PYTHON = config['python']
 
-
-#TODO: Add check that the scripts directory is findable
 # Format commands and bind paths if using singularity.
 if config['singularity']['use_singularity'] == 'true' and config['singularity']['image'] != "none":
-    bind_paths = ",".join(set([os.path.dirname(str(x)) for x in list(QUERY.values())] + [f"{os.getcwd()}/{x}" for x in ['OandE', 'accessory', "merged_vcfs", config['singularity']['code']] + list(QUERY.keys())]))
-    if config['convert_coords'] == "true":
+    bind_paths = ",".join(set([os.path.dirname(str(x)) for x in list(QUERY.values())] + [f"{os.getcwd()}/{x}" for x in ['OandE', 'accessory', "merged_vcfs", config['singularity']['code']] + list(QUERY.keys())])) #Begin collecting directory names that need to be bound
+    if config['convert_coords'] == "true": #Conditionally determine filenames and directories of chain and fasta files for CrossMap
         if config["CrossMap"]['download_refs'] == "true":
             CROSSCHAIN = f"accessory/{os.path.basename(config['CrossMap']['chain'])}.flt.gz"
             CROSSFASTA = f"accessory/{os.path.basename(config['CrossMap']['fasta']).strip('.gz')}"
         else:
             CROSSCHAIN = config['CrossMap']['chain']
             CROSSFASTA = config['CrossMap']['fasta']
-            assert all(os.path.exists(x) for x in [CROSSFASTA, CROSSCHAIN])
-            bind_paths += [os.path.dirname(config['CrossMap']['chain']), os.path.dirname(config['CrossMap']['fasta'])]
-    else:
-        CROSSCHAIN = "accessory/.crosschain"
+            assert all(os.path.exists(x) for x in [CROSSFASTA, CROSSCHAIN]) #If not downloading these files, ensure they exist.
+            bind_paths += [os.path.dirname(config['CrossMap']['chain']), os.path.dirname(config['CrossMap']['fasta'])] #Add these directories to bind list
+    else: #not converting coordinates with CrossMap,
+        CROSSCHAIN = "accessory/.crosschain" #Dummy filenames that we will touch in order to satisfy output requirements of snakemake at download_refs step.
         CROSSFASTA = "accessory/.crossfasta"
-    CMD_PREFIX = f"set +u; {config['singularity']['module']}; singularity exec --bind {bind_paths},{os.getcwd()} {config['singularity']['image']}"
-    CMD_PIPE = f"singularity exec --bind {bind_paths},{os.getcwd()} {config['singularity']['image']}"
+    CMD_PREFIX = f"set +u; {config['singularity']['module']}; singularity exec --bind {bind_paths},{os.getcwd()} {config['singularity']['image']}" #Set the formatted singularity command that we will use for executing individual rules.
+    CMD_PIPE = f"singularity exec --bind {bind_paths},{os.getcwd()} {config['singularity']['image']}" # command without set and module load is needed for piping
     CODE = config['singularity']['code']
-else:
+else: #Not tested
     CMD_PREFIX = config['cmd_prefix']
     CODE = config['dir']['code']
 
@@ -51,24 +49,15 @@ else:
 if not os.path.exists("accessory"): os.mkdir("accessory")
 if not os.path.exists("OandE"): os.mkdir("OandE")
 if not os.path.exists("merged_vcfs"): os.mkdir("merged_vcfs")
-for datset in QUERY.keys():
+for datset in QUERY.keys(): #Make a subdirectory for each input dataset
     if not os.path.exists(datset): os.mkdir(datset)
     if not os.path.exists(f"{datset}/tmp"): os.mkdir(f"{datset}/tmp")
 
+#Determine what chromosomes to consider based on config file
 CHROMS = config['chroms']
 if CHROMS == 'all':
     CHROMS = [str(x) for x in range(1, 23)]
     if config['include_x'] == 'yes': CHROMS.append('X')
-
-# Look for sex and phenotype files that will be used by plink to update these fields for imputed data and create them if they don't exist
-# if not os.path.exists("accessory/sex.txt"):
-if config['phenotype_data']['sex_file'] != "none":
-    shell(f"sed \'s/^/0\t/\' {config['phenotype_data']['sex_file']} > accessory/sex.txt")
-else: shell("touch accessory/sex.txt")
-# if not os.path.exists("accessory/pheno_file.txt"):
-if config['phenotype_data']['pheno_file'] != "none":
-    shell(f"sed \'s/^/0\t/\' {config['phenotype_data']['pheno_file']} > accessory/pheno_file.txt")
-else: shell("touch accessory/pheno_file.txt")
 
 # Run locally or submit to cluster depending on config.yml
 plink_run_specs = {'__default__': ""} # Set default to empty string in case of local run.  i.e. default to plink's auto-detection of resources
@@ -87,21 +76,13 @@ else:
 
 # Conditionally set expected outputs of various steps depending on flags in config.yml
 def get_all_inputs(wildcards):
-    # input_list = expand(f"{{rawdata}}/{{rawdata}}_raw{{chrom}}.bed", rawdata=QUERY.keys(), chrom=CHROMS)
-    input_list += expand(f"{{rawdata}}/{{rawdata}}_chr{{chrom}}-QC.bed", rawdata=QUERY.keys(), chrom=CHROMS)
-    input_list += expand(f"{{rawdata}}/{{rawdata}}_chr{{chrom}}-QC-Ref.bed", rawdata=QUERY.keys(), chrom=CHROMS)
-    if config['merge'] == 'true':
-        input_list.append(f"{OUT}.bed")
-        input_list.append(f"{OUT}-QC.bed")
-    #input_list += expand(f"{{rawdata}}/.{{rawdata}}-PhenoFixed", rawdata=QUERY.keys())
-    input_list.append(f"accessory/typed_key.txt")
+    #input_list += expand(f"{{rawdata}}/{{rawdata}}_chr{{chrom}}-QC.bed", rawdata=QUERY.keys(), chrom=CHROMS)
+    #input_list += expand(f"{{rawdata}}/{{rawdata}}_chr{{chrom}}-QC-Ref.bed", rawdata=QUERY.keys(), chrom=CHROMS)
+    input_list = expand(f"{OUT}-QC_chr{{chrom}}.bed", chrom=CHROMS)
+    input_list += [f"{OUT}-report.pdf", f"accessory/typed_key.txt", f"merged_vcfs/{OUT}.dosage.vcf.gz"]
     return(input_list)
 
-def get_merge_chroms_input(wildcards):
-    input_list = expand(f"{{rawdata}}/{{rawdata}}_chr{{chrom}}-QC.bed", chrom=CHROMS)
-    return(input_list)
-
-def get_snpList_input(wildcards):
+def get_snpList_input(wildcards): #Determine input files based on chromosomes present in 'snp_list' in config file
     chroms = []
     with open(config['snp_list'],'r') as snpList:
         for line in snpList: chroms.append(line.strip().split()[0])
@@ -109,16 +90,15 @@ def get_snpList_input(wildcards):
     input_list = expand(f"{{rawdata}}/{{rawdata}}_raw{{chrom}}.bed", rawdata=QUERY.keys(), chrom=chroms)
     return(input_list)
 
-def plnk_rsrc(rule_name, plink_specs):
+def plnk_rsrc(rule_name, plink_specs): #Retrieve PLINK resource string for a given rule
     try: resources = plink_specs[rule_name]
     except KeyError: resources = plink_specs['__default__']
     return(resources)
 
-rule all:
-    #input: get_all_inputs
-    input: expand(f"{OUT}-QC_chr{{chrom}}.bed", chrom=CHROMS), f"{OUT}-report.pdf", f"accessory/typed_key.txt", f"merged_vcfs/{OUT}.dosage.vcf.gz"
+rule all: #Main rule that determines which files snakemake will attempt to produce upon running
+    input: get_all_inputs #This function will conditionally determine the expected output files based on flags set in config file
 
-rule clean:
+rule clean: #Delete everything and start from scratch.  Only run if user specifically calls this rule.
     input: expand("{query}",query=QUERY.keys())
     run:
         shell("rm *bim; rm *fam; rm *bed; rm *txt")
@@ -129,18 +109,25 @@ rule clean:
 #     output: f"{OUT}-rulegraph.png"
 #     shell: f"snakemake --rulegraph --configfile workflow/config.yml > accessory/Pipeline_DAG.dot; {CMD_PREFIX} dot -Tpng accessory/Pipeline_DAG.dot > {{output}}"
 
-rule download_refs:
-    output: CROSSCHAIN, CROSSFASTA
+rule download_refs: #Download and format chain file and fasta file for CrossMap.  Also copy over & format phenotype and sex files
+    output: CROSSCHAIN, CROSSFASTA, "accessory/sex.txt", "accessory/pheno_file.txt"
     params: chrom_list = [f"chr{x}" for x in CHROMS] + CHROMS # This list filters chain file to remove additional chromosomes that throw issues in crossmap
     run:
+        # Look for sex and phenotype files that will be used by plink to update these fields for imputed data and create them if they don't exist
+        if config['phenotype_data']['sex_file'] != "none":
+            shell(f"sed \'s/^/0\t/\' {config['phenotype_data']['sex_file']} > accessory/sex.txt")
+        else: shell("touch accessory/sex.txt")
+        if config['phenotype_data']['pheno_file'] != "none":
+            shell(f"sed \'s/^/0\t/\' {config['phenotype_data']['pheno_file']} > accessory/pheno_file.txt")
+        else: shell("touch accessory/pheno_file.txt")
         if config['convert_coords'] == 'true':
-            if os.path.exists(f"accessory/{os.path.basename(config['CrossMap']['chain'])}"): os.remove(f"accessory/{os.path.basename(config['CrossMap']['chain'])}")
+            if os.path.exists(f"accessory/{os.path.basename(config['CrossMap']['chain'])}"): os.remove(f"accessory/{os.path.basename(config['CrossMap']['chain'])}") #These may already exist if re-running the pipeline, in which case we need to delete them in order to avoid filename conflicts.
             if os.path.exists(f"accessory/{os.path.basename(config['CrossMap']['fasta'])}"): os.remove(f"accessory/{os.path.basename(config['CrossMap']['fasta'])}")
-            shell(f"wget -P accessory/ {config['CrossMap']['fasta']}; wget -P accessory/ {config['CrossMap']['chain']}")
-            if config['CrossMap']['fasta'].endswith(".gz"): shell(f"gunzip -f accessory/{os.path.basename(config['CrossMap']['fasta'])}")
+            shell(f"wget -P accessory/ {config['CrossMap']['fasta']}; wget -P accessory/ {config['CrossMap']['chain']}") #Download
+            if config['CrossMap']['fasta'].endswith(".gz"): shell(f"gunzip -f accessory/{os.path.basename(config['CrossMap']['fasta'])}") #unzip files if needed
             if config['CrossMap']['chain'].endswith(".gz"): shell(f"gunzip -f accessory/{os.path.basename(config['CrossMap']['chain'])}")
-            new_chain = open(f"accessory/{os.path.basename(config['CrossMap']['chain'])}.flt", 'w')
-            with open(f"accessory/{os.path.basename(config['CrossMap']['chain'])}".strip(".gz"), 'r') as chain_file:
+            new_chain = open(f"accessory/{os.path.basename(config['CrossMap']['chain'])}.flt", 'w') #New formatted chain file
+            with open(f"accessory/{os.path.basename(config['CrossMap']['chain'])}".strip(".gz"), 'r') as chain_file: #CrossMap fails if chromosomes in chain file don't perfectly overlap those in input
                 printing = False
                 for line in chain_file:
                     line0 = line.split()
@@ -151,245 +138,222 @@ rule download_refs:
                         else: printing = False
                     if printing: new_chain.write(line)
             new_chain.close()
-            shell(f"gzip -f accessory/{os.path.basename(config['CrossMap']['chain'])}.flt")
+            shell(f"gzip -f accessory/{os.path.basename(config['CrossMap']['chain'])}.flt") #Compress the newly formatted chain file
             # cmd = f"cat {config['CrossMap']['fasta']} | awk 'BEGIN{{split({chrom_string},chroms); if(\$3 in chroms | \$8 in chroms) print \$0}}' | gzip > accessory/{os.path.basename(config['CrossMap']['chain'])}.flt.gz"
             # shell(cmd)
-        else:
+        else: #If we aren't converting coordinates we still need to create the output of this rule, so that next rule will proceed.
             shell("touch {CROSSCHAIN}; touch {CROSSFASTA}")
 
-rule cross_map:
+rule cross_map: #Convert coordinates, if requested in config
     input: CROSSFASTA, CROSSCHAIN
     output: f"{{rawdata}}/{{rawdata}}_chr{{chrom}}.vcf.gz"
     params:
-        in_pre = lambda wildcards: QUERY[wildcards.rawdata],
-        out_pre = f"{{rawdata}}/{{rawdata}}_chr{{chrom}}.vcf",
-        awk_string = """awk \'{if($5!=\".\") print $0}\'"""
+        in_pre = lambda wildcards: QUERY[wildcards.rawdata], #Prefix of input files
+        out_pre = f"{{rawdata}}/{{rawdata}}_chr{{chrom}}.vcf", #Output prefix
+        awk_string = """awk \'{if($5!=\".\") print $0}\'""" #Awk command to screen variants with no ALT allele (e.g. deletions)
     threads: int(config['CrossMap']['threads'])
     run:
-        if config['convert_coords'] == 'true':
+        if config['convert_coords'] == 'true': #Run CrossMap and filter & index results
             shell(f"{CMD_PREFIX} python {config['CrossMap']['exec']} vcf {CROSSCHAIN} {{params.in_pre}}/chr{{wildcards.chrom}}.dose.vcf.gz {CROSSFASTA} {{params.out_pre}}; "
             f"{CMD_PREFIX} {{params.awk_string}} {{params.out_pre}} | bgzip --threads {{threads}} > {{params.out_pre}}.gz; {CMD_PREFIX} tabix {{params.out_pre}}.gz; "
             f"rm {{params.out_pre}}; {CMD_PREFIX} gzip -f {{params.out_pre}}.unmap")
-        else:
+        else: #Just copy (and index) the input files if not converting coords
             shell(f"cp {{params.in_pre}}/chr{{wildcards.chrom}}.dose.vcf.gz {{output}}; {CMD_PREFIX} tabix {{params.out_pre}}.gz")
 
-rule typed_key:
+rule typed_key: #Extract the genotyped and genotyped-only sites as well as the SNPs with low imputation info (aka R-squared)
     output: f"accessory/{{rawdata}}_typed_key.txt", f"accessory/{{rawdata}}_lowImptInfo.txt"
     params:
         in_pre = lambda wildcards: QUERY[wildcards.rawdata],
-        awk_string1 = """awk \'{printf(\"%s\\ttyped\\n\", $1)}\'""",
-        awk_string2 = """awk \'{printf(\"%s\\ttypedOnly\\n\", $1)}\'""",
-        awk_string3 = """awk \'{if($7 < """ + config['QC']['Rsq_threshold'] + """ && $4 > """ + config['QC']['maf'] + """) print $1}\'"""
+        awk_string1 = """awk \'{printf(\"%s\\ttyped\\n\", $1)}\'""", #formatting printing for typed & imputed rows
+        awk_string2 = """awk \'{printf(\"%s\\ttypedOnly\\n\", $1)}\'""", #formatting printing of typed-only rows
+        awk_string3 = """awk \'{if($7 < """ + config['QC']['Rsq_threshold'] + """ && $4 > """ + config['QC']['maf'] + """) print $1}\'""" #Format string to pull out SNPs with low imputation info, but leave behind the rare SNPs we'd end up filtering anyways to avoid large file sizes
     shell:
         f"{CMD_PREFIX} zgrep Genotyped {{params.in_pre}}/chr*.info.gz | {{params.awk_string1}} | grep -v -f {{params.in_pre}}/typed-only.txt | "
-        f"grep -v SNP | cut -d \':\' -f 2- > accessory/{{wildcards.rawdata}}_typed_key.txt || true; "
-        f"{CMD_PREFIX} {{params.awk_string2}} {{params.in_pre}}/typed-only.txt | grep -v Position >> accessory/{{wildcards.rawdata}}_typed_key.txt || true; "
-        f"{CMD_PREFIX} zcat {{params.in_pre}}/chr*.info.gz | {{params.awk_string3}} > accessory/{{wildcards.rawdata}}_lowImptInfo.txt"
+        f"grep -v SNP | cut -d \':\' -f 2- > accessory/{{wildcards.rawdata}}_typed_key.txt || true; " #Retrieve SNPs that were genotyped & imputed
+        f"{CMD_PREFIX} {{params.awk_string2}} {{params.in_pre}}/typed-only.txt | grep -v Position >> accessory/{{wildcards.rawdata}}_typed_key.txt || true; " #Grab the genotyped-only SNPs
+        f"{CMD_PREFIX} zcat {{params.in_pre}}/chr*.info.gz | {{params.awk_string3}} > accessory/{{wildcards.rawdata}}_lowImptInfo.txt" #Get low info SNPs
 
-rule merge_typed_keys:
+rule merge_typed_keys: #Merge together the typed-keys for the different input datasets.
     input: expand(f"accessory/{{rawdata}}_typed_key.txt", rawdata=QUERY.keys())
     output: f"accessory/typed_key.txt"
-    params: awk_string1 = """awk \'{split($1,a,\":\"); print a[1],a[2],$1,a[3],a[4],$2}\'"""
+    params: awk_string1 = """awk \'{split($1,a,\":\"); print a[1],a[2],$1,a[3],a[4],$2}\'""" #Used at bottom of rule to split out SNP info from the SNP ID.
     run:
-        for i, key in enumerate(input):
-            datset = key.split("/")[1].replace("_typed_key.txt",'')
-            cdat = pd.read_table(key, sep = r"\s+", names=['snpID', 'source'])
-            cdat['dat'] = datset
-            if i==0: dat = cdat
+        for i, key in enumerate(input): #Loop over typed-keys
+            datset = key.split("/")[1].replace("_typed_key.txt",'') #Extract name of dataset from file name
+            cdat = pd.read_table(key, sep = r"\s+", names=['snpID', 'source']) #Read typed-key into memory
+            cdat['dat'] = datset #label data with dataset name
+            if i==0: dat = cdat #If first dataset, hold in memory and move on to next dataset (i.e. first to be merged).
             else:
-                dat = pd.merge(dat,cdat, on=('snpID','source'), how='outer')
-                dat['dat'] = dat['dat_x'].fillna('') + '.' + dat['dat_y'].fillna('')
-                dat = dat.drop(['dat_x','dat_y'], axis=1)
-        dat = dat.set_index(['snpID','source']).unstack('source')
-        dat.to_csv("accessory/body.txt", header=False, sep = "\t")
+                dat = pd.merge(dat,cdat, on=('snpID','source'), how='outer') #Merge current dataset with one we've been building. Outer join to keep everything.
+                dat['dat'] = dat['dat_x'].fillna('') + '.' + dat['dat_y'].fillna('') #Create a new name in the dataset entry that combines names of past and current datasets.  If no other datasets observed for this SNP, just combine name with empty space.
+                dat = dat.drop(['dat_x','dat_y'], axis=1) #Remove the old dataset names
+        dat = dat.set_index(['snpID','source']).unstack('source') #Pivot_wide/spread/unstack the table
+        dat.to_csv("accessory/body.txt", header=False, sep = "\t") #Not sure why these next few lines were necessary.
         with open('accessory/head.txt', 'w') as head: head.write("snpID\ttyped\ttypedOnly\n")
-        shell("cat accessory/head.txt accessory/body.txt > accessory/typed_key_tmp.txt; rm accessory/head.txt; rm accessory/body.txt")
-        if config['convert_coords'] == 'true':
+        shell("cat accessory/head.txt accessory/body.txt > accessory/typed_key_tmp.txt; rm accessory/head.txt; rm accessory/body.txt") #Create temporary key in case we need to convert coordinates
+        if config['convert_coords'] == 'true': #The coordinates in the SNP IDs will be hg38, so these must be run through CrossMap if we converted VCFs to hg19
             with open("accessory/typed_key_tmp.txt", 'r') as typedkey:
-                with open("accessory/typed.vcf", 'w') as vcf:
+                with open("accessory/typed.vcf", 'w') as vcf: #Format and write contents of key to a VCF to be passed through CrossMap
                     for line in typedkey:
                         if not line.startswith("snpID"):
                             line = line.split()
                             marker = line[0].split(":")
                             vcf.write(f"{marker[0]}\t{marker[1]}\t{line[0]}\t{marker[2]}\t{marker[3]}\n")
-            shell(f"{CMD_PREFIX} python {config['CrossMap']['exec']} vcf {CROSSCHAIN} accessory/typed.vcf {CROSSFASTA} accessory/typed_crossmap.vcf")
+            shell(f"{CMD_PREFIX} python {config['CrossMap']['exec']} vcf {CROSSCHAIN} accessory/typed.vcf {CROSSFASTA} accessory/typed_crossmap.vcf") #Run CrossMap
             cm = pd.read_table("accessory/typed_crossmap.vcf", names = ['chrom', 'pos', 'snpID', 'ref', 'alt'], dtype={'pos':np.int32})
             tk = pd.read_table("accessory/typed_key_tmp.txt")
-            fdat = pd.merge(cm, tk, on=('snpID'), how='left')  #how to join?
-            fdat.to_csv("accessory/typed_key.txt", header=False, sep = "\t", index=False)
-            shell("rm accessory/typed_key_tmp.txt accessory/typed.vcf accessory/typed_crossmap.vcf")
-        else: shell(f"tail -n +2 accessory/typed_key_tmp.txt | grep -v snpID | {{params.awk_string1}} > accessory/typed_key.txt")
+            fdat = pd.merge(cm, tk, on=('snpID'), how='left')  #Merge crossmap results with old key (snpIDs in CrossMap results are snpIDs in temporary key).
+            fdat.to_csv("accessory/typed_key.txt", header=False, sep = "\t", index=False) #Write final key to file
+            shell("rm accessory/typed_key_tmp.txt accessory/typed.vcf accessory/typed_crossmap.vcf") #Remove intermediate files
+        else: shell(f"tail -n +2 accessory/typed_key_tmp.txt | grep -v snpID | {{params.awk_string1}} > accessory/typed_key.txt") #Just copy temporary file if no coordinate conversion is needed.
 
-rule convert_vcfs:
+rule convert_vcfs: #Convert imputed VCF files to PLINK; Hard-coding genotypes based on genotype probability and setting low probability genotypes (based on min_gp in config file) to missing
     input: f"{{rawdata}}/{{rawdata}}_chr{{chrom}}.vcf.gz"
     output: f"{{rawdata}}/{{rawdata}}_raw{{chrom}}.bed", f"{{rawdata}}/{{rawdata}}_raw{{chrom}}.bim"
     shell:
         f"{CMD_PREFIX} plink --vcf {{input}} --const-fid 0 --keep-allele-order --vcf-min-gp {config['min_gp']} "
         f"--make-bed --out {{wildcards.rawdata}}/{{wildcards.rawdata}}_raw{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}"
 
-rule convert_dosage:
+rule convert_dosage: #Convert imputed VCF files to PLINK2 dosage format.
     input: f"{{rawdata}}/{{rawdata}}_chr{{chrom}}.vcf.gz"
     output: f"{{rawdata}}/{{rawdata}}_dos{{chrom}}.pgen"
     shell:
         f"{CMD_PREFIX} plink2 --vcf {{input}} dosage=HDS --const-fid 0 "
         f"--make-pgen --out {{wildcards.rawdata}}/{{wildcards.rawdata}}_dos{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}"
 
-rule impt_info_filter:
+rule impt_info_filter: #Filter variants that had low R-squared values. List of these variants is retrieved during typed_key rule
     input: f"{{rawdata}}/{{rawdata}}_raw{{chrom}}.bed", f"accessory/{{rawdata}}_lowImptInfo.txt", f"{{rawdata}}/{{rawdata}}_raw{{chrom}}.bim"
     output: f"{{rawdata}}/{{rawdata}}_info{{chrom}}.bed"
     shell: f"{CMD_PREFIX} plink --bfile {{wildcards.rawdata}}/{{wildcards.rawdata}}_raw{{wildcards.chrom}} --keep-allele-order --exclude accessory/{{wildcards.rawdata}}_lowImptInfo.txt "
             f"--make-bed --out {{wildcards.rawdata}}/{{wildcards.rawdata}}_info{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}"
 
-rule merge_info:
+rule merge_info: #Put together a single file for low imputed quality SNPs to be used in filtering during merge_vcfs
     input: expand(f"accessory/{{rawdata}}_lowImptInfo.txt", rawdata=QUERY.keys())
     output: f"accessory/lowImptInfo.txt", f"merged_vcfs/lowImptInfo.txt"
     shell: f"{CMD_PREFIX} sh -c 'cat accessory/*_lowImptInfo.txt | sort -T {os.getcwd()} | uniq > accessory/lowImptInfo.txt'; "
             f"{CMD_PREFIX} cut -d ':' -f 1,2 accessory/lowImptInfo.txt | tr ':' '\\t' > merged_vcfs/lowImptInfo.txt"
 
-rule merge_vcfs:  #This will maintain original SNP ids produced by imputation.  If converting coords, this will produce snpIDs that are out of sync with coords.
+rule merge_vcfs:  #This will maintain original SNP ids produced by imputation.  If converting coords, this will produce snpIDs that are out of sync with coords.  Note these are not the dosage VCFs though they may contain dosage info.
     input: expand("{rawdata}/{rawdata}_chr{{chrom}}.vcf.gz", rawdata=QUERY.keys()), f"merged_vcfs/lowImptInfo.txt"
     output: f"merged_vcfs/{OUT}_chr{{chrom}}.vcf.gz"
     threads: int(config['bcftools']['threads'])
     run:
-        with open(f"merged_vcfs/chr{wildcards.chrom}.txt", 'w') as mfile:
-            for file in input[:-1]:
+        with open(f"merged_vcfs/chr{wildcards.chrom}.txt", 'w') as mfile: #Write all to-be-merged VCFs to a file
+            for file in input[:-1]: #Exclude the merged_vcfs/lowImptInfo.txt which is last value in input
                 mfile.write(f"{file}\n")
-        with open(f"merged_vcfs/chr{wildcards.chrom}.sh", 'w') as shfile:
+        with open(f"merged_vcfs/chr{wildcards.chrom}.sh", 'w') as shfile: #Create shell file with the bcftools merge command; Filters for MAF and low imputation info
             shfile.write(f"bcftools merge -l merged_vcfs/chr{wildcards.chrom}.txt | bcftools filter -e 'MAF[0]<{config['QC']['maf']}' "
                          f"-T ^merged_vcfs/lowImptInfo.txt -Oz -o merged_vcfs/{OUT}_chr{wildcards.chrom}.vcf.gz --threads {threads}; "
                          f"tabix merged_vcfs/{OUT}_chr{wildcards.chrom}.vcf.gz")
         shell(f"{CMD_PREFIX} sh merged_vcfs/chr{{wildcards.chrom}}.sh")
 
-rule update_IDs_sex_pheno:
-    input: "{rawdata}/{rawdata}_info{chrom}.bed"
+rule update_IDs_sex_pheno: #Update variant IDs, sex, and phenotypes.  New IDs are just chrom:pos where pos is in converted coords (if requested)
+    input: "{rawdata}/{rawdata}_info{chrom}.bed", "accessory/sex.txt", "accessory/pheno_file.txt"
     output: "{rawdata}/{rawdata}-varIDs_chr{chrom}.bed"
     shell: """
     {CMD_PREFIX} awk '{{printf("%s\\t%s:%s\\n",$2,$1,$4)}}' {wildcards.rawdata}/{wildcards.rawdata}_info{wildcards.chrom}.bim > {wildcards.rawdata}/{wildcards.rawdata}_info{wildcards.chrom}_varIDs.txt; 
     {CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}_info{wildcards.chrom} --keep-allele-order --update-name {wildcards.rawdata}/{wildcards.rawdata}_info{wildcards.chrom}_varIDs.txt --update-sex accessory/sex.txt --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-varIDs_tmp_chr{wildcards.chrom}""" + f" {plnk_rsrc(rule, plink_run_specs)};" + """
     {CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-varIDs_tmp_chr{wildcards.chrom} --pheno accessory/pheno_file.txt --keep-allele-order --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-varIDs_chr{wildcards.chrom}""" + f" {plnk_rsrc(rule, plink_run_specs)}; rm {{wildcards.rawdata}}/{{wildcards.rawdata}}-varIDs_tmp_chr{{wildcards.chrom}}*"
 
-#TODO add mbc test in here now that we've moved phenotype addition above
-rule QCcombine_query:
+rule QCcombine_query: #Primary QC step that filters for duplicates, missingness, hwe, and associations between missingness and sex and missigness and case/control status.
     input: "{rawdata}/{rawdata}-varIDs_chr{chrom}.bed"
     output: "{rawdata}/{rawdata}-QC_chr{chrom}.bed"
     params:
         pre1 = "{rawdata}/{rawdata}-varIDs_chr{chrom}", pre2 = "{rawdata}/{rawdata}-QC_chr{chrom}",
         tvm1 = config['QC']['vm1'], tgm = config['QC']['gm'], tvm2 = config['QC']['vm2'],
-        hwe = config['QC']['hwe'], maf = config['QC']['maf'], mbs = config['QC']['mbs'],
+        hwe = config['QC']['hwe'], maf = config['QC']['maf'], mbs = config['QC']['mbs'], mbc = config['QC']['mbc'], # Note the hardcoding of -9 (shutfs off) maf filter here so that maf filter can be applied later after we merge datasets together
     run:
         if config['perform_QC'] == 'true':
             with open("scripts/QCcombine_query.sh", 'w') as QCsh:
                 cmd = f"{CMD_PREFIX} {PYTHON} {CODE}/QC.py -i {{params.pre1}} -d {{wildcards.rawdata}} -o {{wildcards.rawdata}}-QC_chr{{wildcards.chrom}} " \
-                      f"-p plink -tvm1 {{params.tvm1}} -tgm {{params.tgm}} -tvm2 {{params.tvm2}} -hwe {{params.hwe}} -mbs {{params.mbs}} -maf -9  -r '{plnk_rsrc(rule, plink_run_specs)}' --snps_only; " \
+                      f"-p plink -tvm1 {{params.tvm1}} -tgm {{params.tgm}} -tvm2 {{params.tvm2}} -hwe {{params.hwe}} -mbs {{params.mbs}} -mbc {{params.mbc}} -maf -9  -r '{plnk_rsrc(rule, plink_run_specs)}' --snps_only; " \
                       f"mv {{params.pre2}}.geno* {{wildcards.rawdata}}/tmp; mv {{params.pre2}}.var* {{wildcards.rawdata}}/tmp"
                 #if config['delete_intermediates'] == 'true': cmd += f"rm -r {{wildcards.rawdata}}/tmp/"
             shell(cmd)
         else: shell(f"{CMD_PREFIX} plink --bfile {{params.pre1}} --make-bed --out {{params.pre1}}-QC")
         if config['delete_intermediates'] == 'true': shell(f"rm {{wildcards.rawdata}}/{{wildcards.rawdata}}_raw{{wildcards.chrom}}*; rm {{wildcards.rawdata}}/{{wildcards.rawdata}}_info{{wildcards.chrom}}*; rm {{wildcards.rawdata}}/{{wildcards.rawdata}}-varIDs_chr{{wildcards.chrom}}*")
 
-rule restore_strand:
+rule restore_strand: #Just in case alleles got swapped at any point during the QC, we re-establish the correct A1/A2 allele specification here.
     input: "{rawdata}/{rawdata}-QC_chr{chrom}.bed"
     output: "{rawdata}/{rawdata}-QC-Ref_chr{chrom}.bed"
     params:
-        bim_file = "{rawdata}/{rawdata}-varIDs_chr{chrom}.bim"
+        bim_file = "{rawdata}/{rawdata}-varIDs_chr{chrom}.bim" #bim file prior to QC from which we will grab A1/A2 values.
     shell:
         f"{CMD_PREFIX} plink --bfile {{wildcards.rawdata}}/{{wildcards.rawdata}}-QC_chr{{wildcards.chrom}} --make-bed "
         f"--a2-allele {{params.bim_file}} 6 2 --out {{wildcards.rawdata}}/{{wildcards.rawdata}}-QC-Ref_chr{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}"
 
-rule merge_inputs:
+rule merge_inputs: #Merge the QC'ed plink datasets together for each chromosome.
     input: expand("{rawdata}/{rawdata}-QC-Ref_chr{{chrom}}.bed", rawdata=QUERY.keys())
     output: f"{OUT}_chr{{chrom}}.bed"
     params:
-        input_list = ",".join([f"{x}/{x}-QC-Ref_chr{{chrom}}" for x in QUERY.keys()])
+        input_list = ",".join([f"{x}/{x}-QC-Ref_chr{{chrom}}" for x in QUERY.keys()]) #Create comma-separated list of paths to plink datasets
     run:
-        if len(QUERY.keys()) > 1:
+        if len(QUERY.keys()) > 1: #Can only merge if more than one input dataset was provided
             shell(f"{CMD_PREFIX} {PYTHON} {CODE}/mergeInputs.py -i {{params.input_list}} -d {os.getcwd()} -o {OUT}_chr{{wildcards.chrom}} -p plink --drop_pos_dups -r '{plnk_rsrc(rule, plink_run_specs)}'")
         else:
             shell(f"{CMD_PREFIX} plink --bfile {{params.input_list}} --make-bed --keep-allele-order --out {OUT}_chr{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}")
         if config['delete_intermediates'] == 'true':
             if len(QUERY.keys()) > 1:
-                shell(f"rm */*chr{{wildcards.chrom}}.*unq*")
+                shell(f"rm */*chr{{wildcards.chrom}}.*unq*") #These are files that get created during attempts to harmonize SNPs across the different datasets.
             shell(f"rm ./*/*QC-Ref_chr*; rm ./*/*-QC_chr*")
 
-rule filter_merged:
+rule filter_merged: #Apply MAF filter to merged datasets.
     input: f"{OUT}_chr{{chrom}}.bed"
     output: f"{OUT}-QC_chr{{chrom}}.bed", f"{OUT}-QC_chr{{chrom}}.bim"
     shell: f"{CMD_PREFIX} plink --bfile {OUT}_chr{{wildcards.chrom}} --maf {config['QC']['maf']} --keep-allele-order --make-bed --out {OUT}-QC_chr{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}"
 
-rule filter_dosage:
+rule filter_dosage: #As opposed to running the dosage data through preceeding QC steps, just use the SNP IDs from merged QCed data (filter_merged rule). This step also updates sex and phenotypes and relabels IDs in the plink2 dosage files
     input: f"{{rawdata}}/{{rawdata}}_dos{{chrom}}.pgen", f"{OUT}-QC_chr{{chrom}}.bim"
     output: f"{{rawdata}}/{{rawdata}}_QCdos{{chrom}}.pgen", f"{{rawdata}}/{{rawdata}}_QCdos{{chrom}}.vcf.gz"
-    shell: f"cut -f 2 {OUT}-QC_chr{{wildcards.chrom}}.bim | sed 's/23:/X:/' > accessory/snps.dos.{{wildcards.chrom}};"
-            f"{CMD_PREFIX} plink2 --pfile {{wildcards.rawdata}}/{{wildcards.rawdata}}_dos{{wildcards.chrom}} "
+    shell: f"cut -f 2 {OUT}-QC_chr{{wildcards.chrom}}.bim | sed 's/23:/X:/' > accessory/snps.dos.{{wildcards.chrom}};" #Grab SNP list from merged QCed data
+            f"{CMD_PREFIX} plink2 --pfile {{wildcards.rawdata}}/{{wildcards.rawdata}}_dos{{wildcards.chrom}} " #Filter SNPs, relabel IDs, & update sex and phenotypes.
             f"--extract accessory/snps.dos.{{wildcards.chrom}} --set-all-var-ids @:# --update-sex accessory/sex.txt --pheno accessory/pheno_file.txt --make-pgen "
             f"--out {{wildcards.rawdata}}/{{wildcards.rawdata}}_QCdos{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}; "
             f"{CMD_PREFIX} plink2 --pfile {{wildcards.rawdata}}/{{wildcards.rawdata}}_QCdos{{wildcards.chrom}} --export vcf vcf-dosage=HDS-force --out {{wildcards.rawdata}}/{{wildcards.rawdata}}_QCdos{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)};"
             f"{CMD_PREFIX} bgzip {{wildcards.rawdata}}/{{wildcards.rawdata}}_QCdos{{wildcards.chrom}}.vcf; "
-            f"{CMD_PREFIX} tabix {{wildcards.rawdata}}/{{wildcards.rawdata}}_QCdos{{wildcards.chrom}}.vcf.gz"
-            # f"{CMD_PREFIX} plink2 --pfile {{wildcards.rawdata}}/{{wildcards.rawdata}}_QCdos{{wildcards.chrom}} "
-            # f"--pheno accessory/pheno_file.txt --make-pgen "
-            # f"--out {{wildcards.rawdata}}/{{wildcards.rawdata}}-3dos{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)}"
+            f"{CMD_PREFIX} tabix {{wildcards.rawdata}}/{{wildcards.rawdata}}_QCdos{{wildcards.chrom}}.vcf.gz" #Convert PLINK2 dosage files to dosage VCFs
 
-#TODO add temp dir to sort
-rule merge_dosage:
+rule merge_dosage: #Merge the results from filter_dosage
     input: expand("{rawdata}/{rawdata}_QCdos{{chrom}}.vcf.gz", rawdata=QUERY.keys()), f"{OUT}-QC_chr{{chrom}}.bim"
     output: f"merged_vcfs/{OUT}.{{chrom}}.QC.vcf.gz"
     run:
-        with open(f"accessory/dosage.{wildcards.chrom}.merge.list", 'w') as mlist:
+        with open(f"accessory/dosage.{wildcards.chrom}.merge.list", 'w') as mlist: #Create list of files to merge
             for dat in QUERY.keys():
                 mlist.write(f"{dat}/{dat}_QCdos{wildcards.chrom}.vcf.gz\n")
-        if not os.path.exists(f"{OUT}_chr{wildcards.chrom}"): os.mkdir(f"{OUT}_chr{wildcards.chrom}")
-        # shell(f"cut -f 2 {OUT}-QC_chr{{wildcards.chrom}}.bim > accessory/snps.dos.{{wildcards.chrom}}; {CMD_PREFIX} plink2 --merge-list accessory/dosage.{{wildcards.chrom}}.merge.list "
-        #       f"--extract accessory/snps.dos.{{wildcards.chrom}} --make-pgen --out {OUT}_chr{{wildcards.chrom}} {plnk_rsrc(rule, plink_run_specs)};"
-        shell(f"{CMD_PREFIX} bcftools merge -l accessory/dosage.{{wildcards.chrom}}.merge.list -Oz -o merged_vcfs/{OUT}.{{wildcards.chrom}}.usort.QC.vcf.gz;"
-              f"{CMD_PREFIX} tabix merged_vcfs/{OUT}.{{wildcards.chrom}}.usort.QC.vcf.gz; "
-              f"{CMD_PREFIX} bcftools sort merged_vcfs/{OUT}.{{wildcards.chrom}}.usort.QC.vcf.gz --temp-dir {OUT}_chr{{wildcards.chrom}} -Oz -o merged_vcfs/{OUT}.{{wildcards.chrom}}.QC.vcf.gz;"
+        if not os.path.exists(f"{OUT}_chr{wildcards.chrom}"): os.mkdir(f"{OUT}_chr{wildcards.chrom}") #Create temporary directory for sorting
+        shell(f"{CMD_PREFIX} bcftools merge -l accessory/dosage.{{wildcards.chrom}}.merge.list -Oz -o merged_vcfs/{OUT}.{{wildcards.chrom}}.usort.QC.vcf.gz;" #Merge VCFs
+              f"{CMD_PREFIX} tabix merged_vcfs/{OUT}.{{wildcards.chrom}}.usort.QC.vcf.gz; " #Index merged VCFs
+              f"{CMD_PREFIX} bcftools sort merged_vcfs/{OUT}.{{wildcards.chrom}}.usort.QC.vcf.gz --temp-dir {OUT}_chr{{wildcards.chrom}} -Oz -o merged_vcfs/{OUT}.{{wildcards.chrom}}.QC.vcf.gz;" #Sort and index merged VCFs
               f"{CMD_PREFIX} tabix merged_vcfs/{OUT}.{{wildcards.chrom}}.QC.vcf.gz; rm merged_vcfs/{OUT}.{{wildcards.chrom}}.usort.QC.vcf.gz")
 
-# rule filter_vcf:
-#     input: f"merged_vcfs/{OUT}_chr{{chrom}}.vcf.gz", f"{OUT}-QC_chr{{chrom}}.bim"
-#     output: f"merged_vcfs/{OUT}.{{chrom}}.QC.vcf.gz"
-#     run:
-#         if config['convert_coords'] == 'true':
-#             cmd = f"cut -f 2 {{input[1]}} | sed 's/:/\t/' > accessory/snps.{{wildcards.chrom}}.list; mkdir {OUT}_chr{{wildcards.chrom}}; " \
-#                   f"{CMD_PREFIX} sh -c 'bcftools sort {{input[0]}} --temp-dir {OUT}_chr{{wildcards.chrom}} -Oz -o {OUT}_chr{{wildcards.chrom}}.merged.vcf.gz; bcftools view -R accessory/snps.{{wildcards.chrom}}.list -Oz -o {{output}} {OUT}_chr{{wildcards.chrom}}.merged.vcf.gz' ;" \
-#                   f"rm -r {OUT}_chr{{wildcards.chrom}}"
-#         else:
-#             cmd = f"cut -f 2 {{input[1]}} | sed 's/:/\t/' | sed 's/^/chr/' > accessory/snps.{{wildcards.chrom}}.list; mkdir {OUT}_chr{{wildcards.chrom}}; " \
-#                   f"{CMD_PREFIX} sh -c 'bcftools sort {{input[0]}} --temp-dir {OUT}_chr{{wildcards.chrom}} -Oz -o {OUT}_chr{{wildcards.chrom}}.merged.vcf.gz; bcftools view -R accessory/snps.{{wildcards.chrom}}.list -Oz -o {{output}} {OUT}_chr{{wildcards.chrom}}.merged.vcf.gz' ;" \
-#                   f"rm -r {OUT}_chr{{wildcards.chrom}}"
-#         cmd += f"{CMD_PREFIX} tabix {{output}}"
-#         shell(cmd)
-
-rule concat_vcfs:
+rule concat_vcfs: #Concatenate merged dosage VCFs
     input: expand(f"merged_vcfs/{OUT}.{{chrom}}.QC.vcf.gz", chrom=CHROMS)
-    # input: f"{OUT}_dos{{chrom}}.pgen"
     output: f"merged_vcfs/{OUT}.dosage.vcf.gz"
     run:
-        with open("merged_vcfs/concat.list", 'w') as clist:
+        with open("merged_vcfs/concat.list", 'w') as clist: #Create list of files to concatenate
             for file in input: clist.write(f"{file}\n")
         shell(f"{CMD_PREFIX} sh -c 'bcftools concat -f merged_vcfs/concat.list | bcftools sort --temp-dir {os.getcwd()} -Oz -o {{output}}';"
               f" {CMD_PREFIX} tabix {{output}}")
 
-rule make_report:
+rule make_report: #Final step to create a PDF report that summarizes the most relevant results.
     input: expand(f"{OUT}-QC_chr{{chrom}}.bed", chrom=CHROMS)#, f"{OUT}-rulegraph.png"
     output: f"{OUT}-report.pdf"
     run:
-        with open("accessory/chunks_excluded.txt", 'w') as exc_file:
+        with open("accessory/chunks_excluded.txt", 'w') as exc_file: #Aggregate data from the 'chunks_excluded.txt' files that TOPMed created for each imputed dataset
             exc_file.write(f"dataset\tchunk\tnum.snps\tref.ovlp\tnum.low.sample.callrate\n")
-            for dataset,directory in QUERY.items():
-                with open(f"{directory}/chunks-excluded.txt") as dat_chunks:
+            for dataset,directory in QUERY.items(): #loop over input datasets
+                with open(f"{directory}/chunks-excluded.txt") as dat_chunks: #Grab 'chunks_excluded.txt' file for current dataset
                     for line in dat_chunks:
-                        if not line.startswith("#"): exc_file.write(f"{dataset}\t" + line)
+                        if not line.startswith("#"): exc_file.write(f"{dataset}\t" + line) #Ignore header
                         if not line.endswith("\n"): exc_file.write(f"\n")
-        with open("accessory/snps_excluded.txt", 'w') as exc_file:
+        with open("accessory/snps_excluded.txt", 'w') as exc_file: #Aggregate data from the 'snps_excluded.txt' files that TOPMed created for each imputed dataset
             exc_file.write(f"dataset\tsite\tfilter\tinfo\n")
             for dataset,directory in QUERY.items():
                 with open(f"{directory}/snps-excluded.txt") as dat_chunks:
                     for line in dat_chunks:
                         if not line.startswith("#"): exc_file.write(f"{dataset}\t" + line.replace(" ", "-"))
                         if not line.endswith("\n"): exc_file.write(f"\n")
-        with open("accessory/typed.txt", 'w') as typed:
+        with open("accessory/typed.txt", 'w') as typed: #Aggregate the SNPs that were genotyped but not imputed for each dataset
             typed.write(f"dataset\tsnpID\n")
             for dataset,directory in QUERY.items():
                 with open(f"{directory}/typed-only.txt") as dat_chunks:
@@ -398,17 +362,15 @@ rule make_report:
                         if not line.endswith("\n"): typed.write(f"\n")
         with open("scripts/gather_report_data.sh", 'w') as report_cmds:
             #report_cmds.write("wc -l */tmp/*txt | grep -v -e scripts -e total | awk \'{split($2,a,\"/\"); split(a[3],b,\".\"); split(b[1],c,\"-\"); print c[1],b[3],$1}\' > accessory/filter.stats\n")
-            report_cmds.write("wc -l */*fltdSNPs*txt | grep -v -e scripts -e total | awk \'{split($2,a,\"/\"); split(a[2],b,\"QC_\"); split(b[2],c,\".\"); print a[1],c[1],c[3],$1}\' > accessory/chromfilter.stats\n")
-            report_cmds.write("wc -l */*dupvar | awk \'{split($2,a,\"/\"); split(a[2],b,\"QC_\"); split(b[2],c,\".\"); print a[1],c[1],c[2],$1}\' | grep -v total >> accessory/chromfilter.stats\n")
-            if config['convert_coords'] == 'true':
+            report_cmds.write("wc -l */*fltdSNPs*txt | grep -v -e scripts -e total | awk \'{split($2,a,\"/\"); split(a[2],b,\"QC_\"); split(b[2],c,\".\"); print a[1],c[1],c[3],$1}\' > accessory/chromfilter.stats\n") #For each chromosome & dataset, determine the number of SNPs caught by each QC threshold
+            report_cmds.write("wc -l */*dupvar | awk \'{split($2,a,\"/\"); split(a[2],b,\"QC_\"); split(b[2],c,\".\"); print a[1],c[1],c[2],$1}\' | grep -v total >> accessory/chromfilter.stats\n") #Calculate number of duplicates, which may include multiallelic variants
+            if config['convert_coords'] == 'true': #Extract number of unmapped variants if coordinate conversion was requested
                 report_cmds.write("for f in */*unmap.gz; do printf \"${f}\\t\"; zcat $f | wc -l ; done | awk \'{split($1,a,\"/\"); n=split(a[2],b,\"_\"); split(b[n],c,\".\"); print a[1],c[1],c[3],$2}\' >> accessory/chromfilter.stats\n")
-            report_cmds.write("grep variants */*raw*log | grep QC | awk \'{split($1,b,\"/\"); n=split(b[2],c,\"_\"); print b[1],c[n]}\' | tr \":\" \" \" | sed \'s/raw/chr/\' | sed \'s/.log/ raw/\' >> accessory/chromfilter.stats\n")
-            report_cmds.write("wc -l */*-QC-Ref_chr*.bim | awk \'{split($2,a,\"/\"); n=split(a[2],b,\"_\"); printf(\"%s\\t%s\\tpostQC\\t%s\\n\",a[1],b[n],$1)}\' | sed \'s/.bim//\' | grep -v total >> accessory/chromfilter.stats\n")
-            report_cmds.write("grep people *QC_chr*log | grep -v males | awk \'{n=split($1,a,\"_\"); print a[n]}\' | sed \'s/.log:/\\tMAF\\t/\' > accessory/merge.stats\n")
-            if config['merge'] == 'true':
-                report_cmds.write("wc -l *mergeSNPs.txt | grep -v total | awk \'{n=split($2,b,\"_\"); printf(\"%s\\tovlp\\t%s\\n\",b[n-1],$1)}\' >> accessory/merge.stats\n")
-            else:
-                report_cmds.write(f"wc -l {OUT}_chr*.bim | awk \'{{split($2,a,\"/\"); n=split(a[1],b,\"_\"); printf(\"%s\\tovlp\\t%s\\n\",b[n],$1)}}\' | sed \'s/.bim//\' | grep -v total >> accessory/merge.stats\n")
+            report_cmds.write("grep variants */*raw*log | grep QC | awk \'{split($1,b,\"/\"); n=split(b[2],c,\"_\"); print b[1],c[n]}\' | tr \":\" \" \" | sed \'s/raw/chr/\' | sed \'s/.log/ raw/\' >> accessory/chromfilter.stats\n") #Get raw numbers of SNPs at outset
+            report_cmds.write("wc -l */*-QC-Ref_chr*.bim | awk \'{split($2,a,\"/\"); n=split(a[2],b,\"_\"); printf(\"%s\\t%s\\tpostQC\\t%s\\n\",a[1],b[n],$1)}\' | sed \'s/.bim//\' | grep -v -e total -e unq >> accessory/chromfilter.stats\n") #Get number of remaining SNPs after QC
+            report_cmds.write("grep people *QC_chr*log | grep -v males | awk \'{n=split($1,a,\"_\"); print a[n]}\' | sed \'s/.log:/\\tMAF\\t/\' > accessory/merge.stats\n") #Determine number of SNPs lost due to MAF filter
+            report_cmds.write("wc -l *mergeSNPs.txt | grep -v total | awk \'{n=split($2,b,\"_\"); printf(\"%s\\tovlp\\t%s\\n\",b[n-1],$1)}\' >> accessory/merge.stats\n") #Determine number of overlapping SNPs across all datasets
+            #report_cmds.write(f"wc -l {OUT}_chr*.bim | awk \'{{split($2,a,\"/\"); n=split(a[1],b,\"_\"); printf(\"%s\\tovlp\\t%s\\n\",b[n],$1)}}\' | sed \'s/.bim//\' | grep -v total >> accessory/merge.stats\n")
             report_line = f"echo \'rmarkdown::render(\"scripts/postImpute_report.Rmd\", output_file=\"{OUT}-report.pdf\", " \
                           f"params=list(chrom_file=\"accessory/chromfilter.stats\", " \
                           f"merge_file=\"accessory/merge.stats\", chunk_file=\"accessory/chunks_excluded.txt\", " \
@@ -420,7 +382,7 @@ rule make_report:
         shell(f"{CMD_PREFIX} sh scripts/gather_report_data.sh; mv scripts/{OUT}-report.pdf {OUT}-report.pdf")
 
 
-rule extract_snpList:
+rule extract_snpList: #if a snp_list was provided, this rule will pull the SNPs from the raw data and add them to the QCed data.  This can be useful if the user has a specific set of SNPs that they want to retain regardless of whether they pass QC.  This hasn't been tested in a long while
     input: get_snpList_input
     output: f"{OUT}.snps.bed"
     params:
@@ -458,23 +420,5 @@ rule extract_snpList:
         else:
             print("Must provide a valid path to a snp list (tab-delimited text file with chromosome and position) file in workflow/config.yml at snp_list")
 
-rule make_typed_snp_key:
-    output: "accessory/typed.txt"
-    run:
-        with open("accessory/typed.txt", 'w') as typed:
-            typed.write(f"dataset\tsnpID\n")
-            for dataset,directory in QUERY.items():
-                with open(f"{directory}/typed-only.txt") as dat_chunks:
-                    for line in dat_chunks:
-                        if not line.startswith("#"): typed.write(f"{dataset}\t" + "\t".join(line.split(":")))
-                        if not line.endswith("\n"): typed.write(f"\n")
 
-rule cat_impt_keys:
-    input: expand(f"{{rawdata}}/{{rawdata}}_chr{{chrom}}.imptkey.txt", rawdata=QUERY.keys(), chrom=CHROMS)
-    output: f"accessory/{OUT}.imptkey.txt"
-    shell: "cat */*.imptkey.txt > accessory/{OUT}.imptkey.txt"
-#
-# rule delete_intermediate_files:
-#     output: ".deleted_files.txt"
-#     shell: "rm */"
 

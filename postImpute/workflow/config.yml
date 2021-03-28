@@ -22,19 +22,19 @@ perform_QC: 'true'
 convert_coords: 'false' # Convert coordinates from hg38 to hg19?
 QC:
   Rsq_threshold: "0.5"  # Imputed variants with Rsq less than this threshold will be removed.  Set to 0 to disable filter.
-  vm1: "0.2"
-  gm: "0.1"
+  vm1: "0.2" #First pass variant missingness threshold.  Used to remove bad markers prior to identifying high missingness individuals.
+  gm: "0.1" #Missingness thresholds for removing individuals.  Applied after vm1 threshold applied to variants.
   vm2: "0.05"  # Ultimate call rate for variants after removing low-callrate samples
   maf: "0.01"  # mimimum Minor allele frequency
   hwe: "-9"  # p-value threshold for whether site follows hardy-weinberg
   mbs: "0.0000001"  # p-value treshold for test of whether missingness varies by sex
+  mbc: "0.0000001"
 chroms: "all"
 include_x: "no"
 bcftools:
   executable: "bcftools"
   threads: '6'
   plugins: '/usr/local/bin/miniconda/pkgs/bcftools-1.9-h68d8f2e_9/libexec/bcftools/'
-merge: "false"
 delete_intermediates: "false"
 cmd_prefix: "module load plink/1.90b6.10; module load htslib/1.6; module load bcftools/1.9;"
 python: 'python'

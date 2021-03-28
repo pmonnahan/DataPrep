@@ -24,9 +24,9 @@ PYTHON = config['python']
 REFASTA = config['reference']['refFasta']
 REFVCF = config['reference']['refVCF']
 if config['FixRef'] == "true":
-    if config['download_reference'] == 'true':
-        REFASTA = f"{os.getcwd()}/RefAnnotationData/human_g1k_v37.fasta.gz"
-        REFVCF = f"{os.getcwd()}/RefAnnotationData/All_20170710.vcf.gz"
+    if config['reference']['download'] == 'true':
+        REFASTA = f"{os.getcwd()}/RefAnnotationData/{os.path.basename(REFASTA)}"
+        REFVCF = f"{os.getcwd()}/RefAnnotationData/{os.path.basename(REFVCF)}"
     else:
         assert (REFASTA != "none" and REFVCF != "none"), "Must provide a reference fasta and VCF in workflow/config.yml file"
         assert os.path.exists(config['reference']['refFasta']), f"Did not find reference fasta: {config['reference']['refFasta']}"
@@ -52,7 +52,7 @@ else:
 if not os.path.exists("RefAnnotationData"): os.mkdir("RefAnnotationData")
 if not os.path.exists("accessory"): os.mkdir("accessory")
 if not os.path.exists("OandE"): os.mkdir("OandE")
-for datset in QUERY.keys():
+for datset in QUERY.keys(): #Make subdirectory for each dataset
     if not os.path.exists(datset):
         os.mkdir(datset)
         os.mkdir(f"{datset}/tmp")
@@ -83,7 +83,7 @@ def get_all_inputs(wildcards):
     if config['merge'] == 'true':
         input_list += [f"{OUT}.bed"]
     input_list += expand(f"{{rawdata}}/{{rawdata}}.chr{{chrom}}.vcf.gz", rawdata=QUERY.keys(), chrom=CHROMS)
-    if config['download_reference'] == 'true':
+    if config['reference']['download'] == 'true':
         input_list += [REFASTA, REFVCF]
     return(input_list)
 
@@ -97,13 +97,13 @@ def plnk_rsrc(rule_name, plink_specs):
     except KeyError: resources = plink_specs['__default__'] # Set to default specifications if resources for rule_name not specified
     return(resources)
 
-rule all:
+rule all: #Main function that determines which files snakemake will attempt to produce upon running
     input: get_all_inputs
 
 rule clean: # run snakemake clean to clear all (or most) of the created output
     params: dir_list = " ".join([f"{os.getcwd()}/{x}/*" for x in QUERY.keys()])
     run:
-        for key in QUERY.keys():
+        for key in QUERY.keys(): #Loop over and remove subdirectories that were created for each input dataset
             shutil.rmtree(key)
         if os.path.exists("RefAnnotationData"): shutil.rmtree("RefAnnotationData")
         if os.path.exists(f"{OUT}-report.pdf"): os.remove(f"{OUT}-report.pdf")
@@ -162,9 +162,10 @@ rule flip_strands: #Flip strand for the SNPs specified in 'flip_key' in config f
         else:
             shell(f"{CMD_PREFIX} plink --bfile {{wildcards.rawdata}}/tmp/{{wildcards.rawdata}}.2.dups --keep-allele-order --make-bed --out {{wildcards.rawdata}}/tmp/{{wildcards.rawdata}}_flips {plnk_rsrc(rule, plink_run_specs)}")
 
-rule download_Refs:  # Download hg19 and the 1000Genomes VCF for use in strand flipping of query data
+rule download_Refs:  # Download reference fasta and VCF file
     output: REFVCF, REFASTA
-    shell: "{CMD_PREFIX} sh {CODE}/DownloadRefs.sh"
+    shell: "{CMD_PREFIX} wget --directory-prefix=./RefAnnotationData/ {REFASTA};"
+           "{CMD_PREFIX} wget --directory-prefix=./RefAnnotationData/ {REFVCF}"
 
 rule FixRef:  # Use bcftools +fixref to set reference vs alternate alleles
     input: get_FixRef_input #"{rawdata}/tmp/{rawdata}_flips.bed", REFASTA, REFVCF
@@ -174,13 +175,13 @@ rule FixRef:  # Use bcftools +fixref to set reference vs alternate alleles
         chrom_key = lambda wildcards: QUERY[wildcards.rawdata]['chrom_key']
     run:
         if config['FixRef'] == "true":
-            if not input[1].endswith(".gz"):
+            if not input[1].endswith(".gz"): #Input VCFs need to be compressed with bgzip
                 shell(f"{CMD_PREFIX} bgzip -c {{input[1]}} > {wildcards.rawdata}/tmp/tmp.fasta.gz")
             else:
                 shell(f"{CMD_PREFIX} sh -c 'zcat {{input[1]}} | bgzip -c > {wildcards.rawdata}/tmp/tmp.fasta.gz'")
-            shell(f"{CMD_PREFIX} python -c 'import pysam; pysam.faidx(\"{wildcards.rawdata}/tmp/tmp.fasta.gz\")'")
+            shell(f"{CMD_PREFIX} python -c 'import pysam; pysam.faidx(\"{wildcards.rawdata}/tmp/tmp.fasta.gz\")'") #Index FASTA file
             if not os.path.exists(params.chrom_key):
-                params.chrom_key = f"{os.getcwd()}/accessory/PlinkChrRename.txt"
+                params.chrom_key = f"{os.getcwd()}/accessory/PlinkChrRename.txt" #This ought to be downloaded along with repo, so can use this by default if a chromosome key is not provided
             shell(f"{CMD_PREFIX} bash {CODE}/FixRef.sh {{wildcards.rawdata}}_flips {{wildcards.rawdata}}/tmp/ {{wildcards.rawdata}}-FixRef {params.chrom_key} {os.getcwd()}/{wildcards.rawdata}/tmp/tmp.fasta.gz {{input[2]}} t t t t")
         else:
             shell(f"{CMD_PREFIX} plink --bfile {{params.prefix}}_flips --keep-allele-order --make-bed --out {{params.prefix}}-FixRef {plnk_rsrc(rule, plink_run_specs)}")
@@ -233,25 +234,11 @@ rule restore_strand: #This step ensures that the A2 allele specification is main
         else: bim_file = f"{{wildcards.rawdata}}/tmp/{{wildcards.rawdata}}_flips.bim"
         shell(f"{CMD_PREFIX} plink --bfile {{params.pre2}}-QC --make-bed --a2-allele {bim_file} 6 2 --out {{params.pre2}}-QC-Ref {plnk_rsrc(rule, plink_run_specs)}")
 
-# rule filter_missingness_by_case: #Test for an association between missingness and case/control status
-#     input: "{rawdata}/{rawdata}-QC-Ref-pheno.bed"
-#     output: "{rawdata}/{rawdata}-QC-Ref_mbc.bed"
-#     run:
-#         import pandas as pd
-#         shell(f"{CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref --test-missing --allow-no-sex --out {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref")
-#         try: mbc = pd.read_table(f"{wildcards.rawdata}/{wildcards.rawdata}-QC-Ref.missing", sep = r"\s+") #Above plink command will error out if dataset contains only cases or controls
-#         except FileNotFoundError: #Accommodate potential plink errors
-#             mbc = pd.DataFrame(data={"P":[99],"SNP":["-99"]})
-#         dat = mbc[mbc['P'] < float(config['QC']['mbc'])]['SNP'].drop_duplicates() #Find SNPs that have p-value below threshold from config file
-#         dat.to_csv(f'{wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_missing_filter.txt', header=False,index=False)
-#         shell(f"{CMD_PREFIX} plink --bfile {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref-pheno --exclude {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_missing_filter.txt --keep-allele-order --make-bed --out {wildcards.rawdata}/{wildcards.rawdata}-QC-Ref_mbc") #Filter SNPs
-
-
 rule merge_inputs: #Optionally, merge together the different datasets provided.
     input: expand("{rawdata}/{rawdata}-QC-Ref.bed", rawdata=QUERY.keys())
     output: f"{OUT}.bed"
     params:
-        input_list = ",".join([f"{x}/{x}-QC-Ref" for x in QUERY.keys()])
+        input_list = ",".join([f"{x}/{x}-QC-Ref" for x in QUERY.keys()]) #Create comma separated list of plink prefixes
     run:
         if config['merge'] == 'true':
             shell(f"{CMD_PREFIX} {PYTHON} {CODE}/mergeInputs.py -i {{params.input_list}} -d {os.getcwd()} -o {OUT} -p plink")
@@ -268,7 +255,7 @@ rule mis_impute_prep: #Parse PLINK datasets by chromosome and convert to VCF for
 #TODO: add mbc filter to QC report
 rule make_report: #Final step to create a PDF report that summarizes the most relevant results.
     input: expand("{rawdata}/{rawdata}.chr{chrom}.vcf.gz", rawdata=QUERY.keys(), chrom=CHROMS)#, f"{OUT}-rulegraph.png"
-    output: f"{OUT}-report.pdf"
+    output: f"{OUT}-report.pdf
     params: input_list = ",".join(expand("{rawdata}/{rawdata}.chr20_freq.txt", rawdata=QUERY.keys()))
     run:
         with open("scripts/gather_report_data.sh", 'w') as report_cmds: #This shell script generates some ancillary data and also formats a call to render the R(markdown) with the specified arguments.
