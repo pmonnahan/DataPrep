@@ -167,6 +167,14 @@ Example of input specifications in the config file:
         ID_key: "none"
         flip_key: "none"
         
+Phenotypes of the samples must be specified by a tab-delimited text file where the first column contains the sample IDs (as they appear in the imputed VCF file) and the second column contains the phenotype. The path to this file can be provided in the field labelled 'phenotype_file' under the 'phenotype_data' field in the config.yml file.
+
+Sex of the samples must also be specified in a tab-delimited text file where the first column is sample ID and the second column is the sex specification according to PLINK.  The path to this file can be provided in the field labelled 'sex_file' under the 'phenotype_data' field in the config.yml file.
+
+    phenotype_data: 
+      pheno_file: "none"
+      sex_file: "/path/to/sex/file"
+        
 ### Output
 The output is a set of PLINK files in the parent directory labelled with the value provided in the 'outname' entry of the config file.  However, if 'merge' is set to 'false' in the config file, this final merge step is skipped, and the final output would be the set of QC'ed plink files within each subdirectory labelled with the dataset names.  Within each of these subdirectories, there will also be a set of VCF files, which are suitable for use in either the Michigan or TOPMed imputation servers.
 

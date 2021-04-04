@@ -152,14 +152,12 @@ The pipeline accepts as input one or more directories containing the gzipped VCF
 
 Additionally, these input directories should contain two additional files that are provided by the imputation server called 'chunks-excluded.txt' and 'snps-excluded.txt'.  If you submitted separate jobs for each chromosome, then these files will need to be concatenated and provided as a single pair of files.
 
-Phenotypes of the samples must be specified in one of two ways.  When more than one input dataset is provided, if the individual datasets are composed entirely of cases OR controls, then the names of the datasets as listed under 'query' in the config.yml can simply be specified under the 'case_datasets' and 'control_dataset' fields in the config file, respectively (see below).  If multiple case or multiple control datasets exist, these can be listed as a comma-separated (no spaces) string in these fields.  The other way to specify phenotypes is to provide a tab-delimited text file where the first column contains the sample IDs (as they appear in the imputed VCF file) and the second column contains the phenotype. The path to this file can be provided in the field labelled 'phenotype_file' under the 'phenotype_data' field in the config.yml file.
+Phenotypes of the samples must be specified by a tab-delimited text file where the first column contains the sample IDs (as they appear in the imputed VCF file) and the second column contains the phenotype. The path to this file can be provided in the field labelled 'phenotype_file' under the 'phenotype_data' field in the config.yml file.
 
 Sex of the samples must also be specified in a tab-delimited text file where the first column is sample ID and the second column is the sex specification according to PLINK.  The path to this file can be provided in the field labelled 'sex_file' under the 'phenotype_data' field in the config.yml file.
 
     phenotype_data: 
       pheno_file: "none"
-      case_datasets: "dataset1,dataset2"
-      control_datasets: "dataset3"
       sex_file: "/path/to/sex/file"
       
 ### Output
@@ -198,7 +196,7 @@ A series of filtering steps are then performed by the script _'scripts/QC.py'_, 
       hwe: "0.0000001"  # p-value threshold for whether site follows hardy-weinberg
       mbs: "0.0000001"  # p-value treshold for test of whether missingness varies by sex
     
- We first wish to identify and remove individual samples that show high missingess across markers (specified by 'gm').  However, to identify these individuals, we first need to remove variants that imputed poorly across all individuals (specified by 'vm1').  After removing these individuals, we then remove variants with high missingness (specified by 'vm2').  Since poor imputation will result in missing genotypes, this missingness filter indirectly filters for low quality imputation sites.  Variants are also filtered based whether or not they show significant departures from Hardy-Weinberg Equilibrium ('hwe' entry) and whether there is a significant association between missingness and sex ('mbs' entry).  Note that the minor allele frequency filter ('maf') is reserved for a later step following the (optional) merging of input datasets.  
+ We first wish to identify and remove individual samples that show high missingness across markers (specified by 'gm').  However, to identify these individuals, we first need to remove variants that imputed poorly across all individuals (specified by 'vm1').  After removing these individuals, we then remove variants with high missingness (specified by 'vm2').  Since poor imputation will result in missing genotypes, this missingness filter indirectly filters for low quality imputation sites.  Variants are also filtered based whether or not they show significant departures from Hardy-Weinberg Equilibrium ('hwe' entry) and whether there is a significant association between missingness and sex ('mbs' entry).  Note that the minor allele frequency filter ('maf') is reserved for a later step following the (optional) merging of input datasets.  
   
   Lastly, we remove indels, duplicate SNPs, and multi-allelic variants.  Note that testing for missigness by case/control status is generally recommended as well, but is implemented early on in a downstream pipeline for association/admixture mapping (i.e [admixMap](https://github.com/pmonnahan/admixMap)).  
  
